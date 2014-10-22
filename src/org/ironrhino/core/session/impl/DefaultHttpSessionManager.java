@@ -23,6 +23,8 @@ public class DefaultHttpSessionManager implements HttpSessionManager {
 
 	private static final String SALT = "awpeqaidasdfaioiaoduifayzuxyaaokadoaifaodiaoi";
 
+	private static final String SESSION_KEY_REMOTE_ADDR = "_REMOTE_ADDR";
+
 	private static final String SESSION_TRACKER_SEPERATOR = "-";
 
 	public static final int DEFAULT_LIFETIME = -1; // in seconds
@@ -63,6 +65,12 @@ public class DefaultHttpSessionManager implements HttpSessionManager {
 	@Value("${httpSessionManager.minActiveInterval:"
 			+ DEFAULT_MINACTIVEINTERVAL + "}")
 	private int minActiveInterval;
+
+	@Value("${httpSessionManager.checkRemoteAddr:true}")
+	private boolean checkRemoteAddr;
+
+	@Value("${httpSessionManager.alwaysUseCacheBased:false}")
+	private boolean alwaysUseCacheBased;
 
 	public String getDefaultLocaleName() {
 		return defaultLocaleName;
@@ -105,6 +113,10 @@ public class DefaultHttpSessionManager implements HttpSessionManager {
 
 	@Override
 	public String getSessionId(HttpServletRequest request) {
+		String token = (String) request
+				.getAttribute(REQUEST_ATTRIBUTE_KEY_SESSION_ID_FOR_API);
+		if (token != null)
+			return token;
 		String sessionTracker = RequestUtils.getCookieValue(request,
 				getSessionTrackerName());
 		if (sessionTracker != null) {
@@ -142,10 +154,10 @@ public class DefaultHttpSessionManager implements HttpSessionManager {
 		long lastAccessedTime = now;
 
 		if (StringUtils.isNotBlank(sessionTracker)) {
-			sessionTracker = CodecUtils.swap(sessionTracker);
-			if (session.isRequestedSessionIdFromURL()) {
+			if (session.isRequestedSessionIdFromURL() || alwaysUseCacheBased) {
 				sessionId = sessionTracker;
 			} else {
+				sessionTracker = CodecUtils.swap(sessionTracker);
 				try {
 					String[] array = sessionTracker
 							.split(SESSION_TRACKER_SEPERATOR);
@@ -185,6 +197,14 @@ public class DefaultHttpSessionManager implements HttpSessionManager {
 			session.setDirty(true);
 		} else {
 			doInitialize(session);
+			if (checkRemoteAddr) {
+				String addr = (String) session
+						.getAttribute(SESSION_KEY_REMOTE_ADDR);
+				if (addr != null
+						&& !RequestUtils.getRemoteAddr(session.getRequest())
+								.equals(addr))
+					invalidate(session);
+			}
 		}
 	}
 
@@ -215,6 +235,12 @@ public class DefaultHttpSessionManager implements HttpSessionManager {
 					session.getResponse(), getSessionTrackerName(),
 					session.getSessionTracker(), true);
 		}
+		if (checkRemoteAddr) {
+			if (!session.getAttrMap().isEmpty()
+					&& session.getAttribute(SESSION_KEY_REMOTE_ADDR) == null)
+				session.setAttribute(SESSION_KEY_REMOTE_ADDR,
+						RequestUtils.getRemoteAddr(session.getRequest()));
+		}
 		doSave(session);
 	}
 
@@ -222,7 +248,7 @@ public class DefaultHttpSessionManager implements HttpSessionManager {
 	public void invalidate(WrappedHttpSession session) {
 		session.setInvalid(true);
 		session.getAttrMap().clear();
-		if (!session.isRequestedSessionIdFromURL()) {
+		if (!session.isRequestedSessionIdFromURL() || alwaysUseCacheBased) {
 			RequestUtils.deleteCookie(session.getRequest(),
 					session.getResponse(), getSessionTrackerName(), true);
 		}
@@ -235,7 +261,11 @@ public class DefaultHttpSessionManager implements HttpSessionManager {
 
 	@Override
 	public String getSessionTracker(WrappedHttpSession session) {
-		if (session.isRequestedSessionIdFromURL())
+		String token = (String) session.getRequest().getAttribute(
+				REQUEST_ATTRIBUTE_KEY_SESSION_ID_FOR_API);
+		if (token != null)
+			return token;
+		if (session.isRequestedSessionIdFromURL() || alwaysUseCacheBased)
 			return session.getId();
 		StringBuilder sb = new StringBuilder();
 		sb.append(session.getId());
@@ -249,14 +279,14 @@ public class DefaultHttpSessionManager implements HttpSessionManager {
 	}
 
 	private void doInitialize(WrappedHttpSession session) {
-		if (session.isRequestedSessionIdFromURL())
+		if (session.isRequestedSessionIdFromURL() || alwaysUseCacheBased)
 			cacheBased.initialize(session);
 		else
 			cookieBased.initialize(session);
 	}
 
 	private void doSave(WrappedHttpSession session) {
-		if (session.isRequestedSessionIdFromURL())
+		if (session.isRequestedSessionIdFromURL() || alwaysUseCacheBased)
 			cacheBased.save(session);
 		else
 			cookieBased.save(session);
@@ -264,7 +294,7 @@ public class DefaultHttpSessionManager implements HttpSessionManager {
 	}
 
 	private void doInvalidate(WrappedHttpSession session) {
-		if (session.isRequestedSessionIdFromURL())
+		if (session.isRequestedSessionIdFromURL() || alwaysUseCacheBased)
 			cacheBased.invalidate(session);
 		else
 			cookieBased.invalidate(session);

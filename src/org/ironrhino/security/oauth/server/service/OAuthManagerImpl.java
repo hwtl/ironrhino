@@ -44,6 +44,33 @@ public class OAuthManagerImpl implements OAuthManager {
 	}
 
 	@Override
+	public Authorization grant(Client client) {
+		Client orig = findClientById(client.getClientId());
+		if (orig == null)
+			throw new IllegalArgumentException("CLIENT_ID_NOT_EXISTS");
+		if (!orig.getSecret().equals(client.getSecret()))
+			throw new IllegalArgumentException("CLIENT_SECRET_MISMATCH");
+		entityManager.setEntityClass(Authorization.class);
+		Authorization auth = new Authorization();
+		auth.setClient(client);
+		auth.setResponseType("token");
+		auth.setRefreshToken(CodecUtils.nextId());
+		entityManager.save(auth);
+		return auth;
+	}
+
+	@Override
+	public Authorization grant(Client client, User grantor) {
+		Authorization auth = new Authorization();
+		auth.setClient(client);
+		auth.setGrantor(grantor);
+		auth.setResponseType("token");
+		auth.setRefreshToken(CodecUtils.nextId());
+		entityManager.save(auth);
+		return auth;
+	}
+
+	@Override
 	public Authorization generate(Client client, String redirectUri,
 			String scope, String responseType) {
 		if (!client.supportsRedirectUri(redirectUri))
@@ -131,19 +158,25 @@ public class OAuthManagerImpl implements OAuthManager {
 	}
 
 	@Override
-	public Authorization refresh(String refreshToken) {
+	public Authorization refresh(Client client, String refreshToken) {
+		Client orig = findClientById(client.getClientId());
+		if (orig == null)
+			throw new IllegalArgumentException("CLIENT_ID_NOT_EXISTS");
+		if (!orig.getSecret().equals(client.getSecret()))
+			throw new IllegalArgumentException("CLIENT_SECRET_MISMATCH");
 		entityManager.setEntityClass(Authorization.class);
 		Authorization auth = (Authorization) entityManager.findOne(
 				"refreshToken", refreshToken);
-		if (auth != null) {
-			if (auth.getClient() != null && !auth.getClient().isEnabled()) {
-				entityManager.delete(auth);
-				return null;
-			}
-			auth.setAccessToken(CodecUtils.nextId());
-			auth.setModifyDate(new Date());
-			entityManager.save(auth);
+		if (auth == null)
+			throw new IllegalArgumentException("INVALID_TOKEN");
+		if (auth.getClient() != null && !auth.getClient().isEnabled()) {
+			entityManager.delete(auth);
+			return null;
 		}
+		auth.setAccessToken(CodecUtils.nextId());
+		auth.setRefreshToken(CodecUtils.nextId());
+		auth.setModifyDate(new Date());
+		entityManager.save(auth);
 		return auth;
 	}
 

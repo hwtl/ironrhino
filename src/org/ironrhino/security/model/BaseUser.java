@@ -12,13 +12,14 @@ import javax.persistence.Access;
 import javax.persistence.AccessType;
 import javax.persistence.Column;
 import javax.persistence.MappedSuperclass;
+import javax.persistence.PrePersist;
+import javax.persistence.PreUpdate;
 import javax.persistence.Transient;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hibernate.annotations.NaturalId;
 import org.ironrhino.core.metadata.CaseInsensitive;
 import org.ironrhino.core.metadata.NotInCopy;
-import org.ironrhino.core.metadata.NotInJson;
 import org.ironrhino.core.metadata.UiConfig;
 import org.ironrhino.core.model.BaseEntity;
 import org.ironrhino.core.model.Enableable;
@@ -33,6 +34,9 @@ import org.ironrhino.core.util.AuthzUtils;
 import org.ironrhino.core.util.JsonUtils;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.util.ClassUtils;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 @MappedSuperclass
 public class BaseUser extends BaseEntity implements RoledUserDetails,
@@ -53,9 +57,8 @@ public class BaseUser extends BaseEntity implements RoledUserDetails,
 	private String username;
 
 	@NotInCopy
-	@NotInJson
 	@Column(nullable = false)
-	@UiConfig(displayOrder = 2, excludedFromLike = true, excludedFromCriteria = true)
+	@UiConfig(hidden = true, excludedFromLike = true, excludedFromCriteria = true)
 	private String password;
 
 	@SearchableProperty(boost = 3, index = Index.NOT_ANALYZED)
@@ -68,65 +71,68 @@ public class BaseUser extends BaseEntity implements RoledUserDetails,
 	private String email;
 
 	@SearchableProperty
-	@NotInJson
 	@UiConfig(displayOrder = 5)
 	private String phone;
 
-	@NotInJson
-	@UiConfig(displayOrder = 6)
+	@JsonIgnore
+	@UiConfig(displayOrder = 99)
 	private boolean enabled = true;
 
 	@NotInCopy
-	@NotInJson
+	@JsonIgnore
 	@UiConfig(hidden = true)
 	@Transient
 	private Date accountExpireDate;
 
 	@NotInCopy
-	@NotInJson
+	@JsonIgnore
 	@UiConfig(hidden = true)
 	private Date passwordModifyDate;
 
 	@NotInCopy
-	@NotInJson
+	@JsonIgnore
 	@UiConfig(hidden = true)
 	@Transient
 	private boolean passwordExpired;
 
 	@NotInCopy
-	@NotInJson
+	@JsonIgnore
 	@UiConfig(hidden = true)
 	@Column(updatable = false)
 	private Date createDate = new Date();
 
 	@NotInCopy
-	@NotInJson
+	@JsonIgnore
 	@Transient
+	@UiConfig(hidden = true)
 	private Collection<GrantedAuthority> authorities;
 
 	@SearchableProperty
 	@Transient
+	@JsonIgnore
+	@UiConfig(displayOrder = 100, alias = "role", template = "<#list value as r>${statics['org.ironrhino.core.util.ApplicationContextUtils'].getBean('userRoleManager').displayRole(r)}<#if r_has_next> </#if></#list>")
 	private Set<String> roles = new HashSet<String>(0);
 
 	@NotInCopy
-	@NotInJson
+	@JsonIgnore
 	@Transient
+	@UiConfig(hidden = true)
 	private Map<String, String> attributes;
 
 	@NotInCopy
-	@NotInJson
+	@JsonIgnore
 	@UiConfig(hidden = true)
 	@Column(insertable = false)
 	private Date modifyDate;
 
 	@NotInCopy
-	@NotInJson
+	@JsonIgnore
 	@UiConfig(hidden = true)
 	@Column(updatable = false)
 	private String createUser;
 
 	@NotInCopy
-	@NotInJson
+	@JsonIgnore
 	@UiConfig(hidden = true)
 	@Column(insertable = false)
 	private String modifyUser;
@@ -141,10 +147,12 @@ public class BaseUser extends BaseEntity implements RoledUserDetails,
 	}
 
 	@Override
+	@JsonIgnore
 	public String getPassword() {
 		return password;
 	}
 
+	@JsonProperty
 	public void setPassword(String password) {
 		this.password = password;
 	}
@@ -186,9 +194,10 @@ public class BaseUser extends BaseEntity implements RoledUserDetails,
 	}
 
 	@NotInCopy
-	@NotInJson
+	@JsonIgnore
 	@Column(name = "roles", length = 4000)
 	@Access(AccessType.PROPERTY)
+	@UiConfig(hidden = true)
 	public String getRolesAsString() {
 		if (roles.size() > 0)
 			return StringUtils.join(roles.iterator(), ',');
@@ -298,19 +307,19 @@ public class BaseUser extends BaseEntity implements RoledUserDetails,
 	}
 
 	@Override
-	@NotInJson
+	@JsonIgnore
 	public boolean isAccountNonExpired() {
 		return accountExpireDate == null || accountExpireDate.after(new Date());
 	}
 
 	@Override
-	@NotInJson
+	@JsonIgnore
 	public boolean isAccountNonLocked() {
 		return true;
 	}
 
 	@Override
-	@NotInJson
+	@JsonIgnore
 	public boolean isCredentialsNonExpired() {
 		return !isPasswordExpired();
 	}
@@ -349,6 +358,8 @@ public class BaseUser extends BaseEntity implements RoledUserDetails,
 
 	@Column(name = "attributes", length = 4000)
 	@Access(AccessType.PROPERTY)
+	@JsonIgnore
+	@UiConfig(hidden = true)
 	public String getAttributesAsString() {
 		if (attributes == null || attributes.isEmpty())
 			return null;
@@ -390,6 +401,17 @@ public class BaseUser extends BaseEntity implements RoledUserDetails,
 	@Override
 	public String toString() {
 		return StringUtils.isNotBlank(this.name) ? this.name : this.username;
+	}
+
+	@PrePersist
+	@PreUpdate
+	public void replaceBlankWithNull() {
+		if (StringUtils.isBlank(name))
+			name = null;
+		if (StringUtils.isBlank(email))
+			email = null;
+		if (StringUtils.isBlank(phone))
+			phone = null;
 	}
 
 }

@@ -1,3 +1,4 @@
+<#assign charset=response.characterEncoding!'utf-8'/>
 <#assign requestURI=request.requestURI?substring(request.contextPath?length)/>
 <#assign modernBrowser = true/>
 <#assign ua = request.getAttribute('userAgent')!/>
@@ -15,16 +16,16 @@
 <head>
 <title><#noescape>${title}</#noescape></title>
 <#if modernBrowser>
-<meta charset="utf-8">
+<meta charset="${charset}">
 <#else>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<meta http-equiv="Content-Type" content="text/html; charset=${charset}"/>
 </#if>
 <#if request.contextPath!=''>
 <meta name="context_path" content="${request.contextPath}" />
 </#if>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="shortcut icon" href="<@url value="/assets/images/favicon.ico"/>" />
-<link href="<@url value="/assets/styles/ironrhino${modernBrowser?string('-min','-ie')}.css"/>" media="all" rel="stylesheet" type="text/css" />
+<link href="<@url value="/assets/styles/ironrhino.css"/>" media="all" rel="stylesheet" type="text/css" />
 <script src="<@url value="/assets/scripts/ironrhino${modernBrowser?string('-min','-ie')}.js"/>" type="text/javascript"<#if modernBrowser&&!head?contains('</script>')> defer</#if>></script>
 <#include "include/assets.ftl"/>
 <#noescape>${head}</#noescape>

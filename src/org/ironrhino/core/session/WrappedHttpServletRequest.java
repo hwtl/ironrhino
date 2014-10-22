@@ -84,6 +84,8 @@ public class WrappedHttpServletRequest extends HttpServletRequestWrapper {
 	@Override
 	public String[] getParameterValues(String name) {
 		String[] value = super.getParameterValues(name);
+		if (value == null)
+			return value;
 		for (int i = 0; i < value.length; i++)
 			value[i] = decryptIfNecessary(name, value[i]);
 		return value;
@@ -93,14 +95,16 @@ public class WrappedHttpServletRequest extends HttpServletRequestWrapper {
 		if (value != null && name.toLowerCase().endsWith("password")
 				&& value.length() >= 20) {
 			String key = session.getSessionTracker();
-			if (key.length() < 25)
+			if (!isRequestedSessionIdFromCookie())
 				return value;
 			try {
-				key = key.substring(15, 25);
+				if (key.length() > 10)
+					key = key.substring(key.length() - 10, key.length());
 				String str = URLDecoder
 						.decode(RC4.decrypt(value, key), "UTF-8");
 				if (str.endsWith(key))
 					value = str.substring(0, str.length() - key.length());
+			} catch (IllegalArgumentException e) {
 			} catch (Exception e) {
 				e.printStackTrace();
 			}

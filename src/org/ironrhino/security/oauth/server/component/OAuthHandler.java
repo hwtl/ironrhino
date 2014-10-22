@@ -9,13 +9,16 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang3.StringUtils;
 import org.ironrhino.core.servlet.AccessHandler;
+import org.ironrhino.core.servlet.HttpErrorHandler;
 import org.ironrhino.core.session.HttpSessionManager;
+import org.ironrhino.core.util.RequestUtils;
 import org.ironrhino.core.util.UserAgent;
 import org.ironrhino.security.oauth.server.model.Authorization;
 import org.ironrhino.security.oauth.server.model.Client;
 import org.ironrhino.security.oauth.server.service.OAuthManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -23,17 +26,23 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.stereotype.Component;
 
 @Component
-@Order(Integer.MIN_VALUE + 1)
-public class OAuthHandler implements AccessHandler {
+@Order(Ordered.HIGHEST_PRECEDENCE)
+public class OAuthHandler extends AccessHandler {
 
 	public static final String REQUEST_ATTRIBUTE_KEY_OAUTH_REQUEST = "_OAUTH_REQUEST";
+	public static final String REQUEST_ATTRIBUTE_KEY_OAUTH_CLIENT = "_OAUTH_CLIENT";
+	public static final String SESSION_ID_PREFIX = "tk_";
 
-	@Value("${api.pattern:/user/self,/oauth2/tokeninfo,/oauth2/revoketoken}")
+	@Value("${oauth.api.pattern:/user/self,/oauth2/tokeninfo,/oauth2/revoketoken,/api/*}")
 	private String apiPattern;
+
+	@Value("${oauth.api.excludePattern:}")
+	private String apiExcludePattern;
 
 	@Autowired
 	private OAuthManager oauthManager;
@@ -41,16 +50,27 @@ public class OAuthHandler implements AccessHandler {
 	@Autowired
 	private UserDetailsService userDetailsService;
 
+	@Autowired(required = false)
+	private HttpErrorHandler httpErrorHandler;
+
 	@Override
 	public String getPattern() {
 		return apiPattern;
+	}
+
+	public String getExcludePattern() {
+		return apiExcludePattern;
 	}
 
 	@Override
 	public boolean handle(HttpServletRequest request,
 			HttpServletResponse response) {
 		String errorMessage = null;
-		String token = request.getParameter("oauth_token");
+		Map<String, String> map = RequestUtils
+				.parseParametersFromQueryString(request.getQueryString());
+		String token = map.get("oauth_token");
+		if (token == null)
+			token = map.get("access_token");
 		if (token == null) {
 			String header = request.getHeader("Authorization");
 			if (header != null) {
@@ -76,7 +96,7 @@ public class OAuthHandler implements AccessHandler {
 		}
 		if (StringUtils.isNotBlank(token)) {
 			Authorization authorization = oauthManager.retrieve(token);
-			if (authorization != null && authorization.getGrantor() != null) {
+			if (authorization != null) {
 				String[] scopes = null;
 				if (StringUtils.isNotBlank(authorization.getScope()))
 					scopes = authorization.getScope().split("\\s");
@@ -91,32 +111,64 @@ public class OAuthHandler implements AccessHandler {
 					}
 				}
 				if (authorized) {
-					UserDetails ud = userDetailsService
-							.loadUserByUsername(authorization.getGrantor()
-									.getUsername());
-					SecurityContext sc = SecurityContextHolder.getContext();
-					Authentication auth = new UsernamePasswordAuthenticationToken(
-							ud, ud.getPassword(), ud.getAuthorities());
-					sc.setAuthentication(auth);
-					Map<String, Object> sessionMap = new HashMap<String, Object>(
-							2, 1);
-					sessionMap
-							.put(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
-									sc);
-					request.setAttribute(
-							HttpSessionManager.REQUEST_ATTRIBUTE_KEY_SESSION_MAP_FOR_API,
-							sessionMap);
-					request.setAttribute(REQUEST_ATTRIBUTE_KEY_OAUTH_REQUEST,
-							true);
-					Client client = authorization.getClient();
-					if (client != null) {
-						UserAgent ua = new UserAgent(
-								request.getHeader("User-Agent"));
-						ua.setAppId(client.getId());
-						ua.setAppName(client.getName());
-						request.setAttribute("userAgent", ua);
+					if (!(authorization.getClient() != null && !authorization
+							.getClient().isEnabled())) {
+						UserDetails ud = null;
+						if (authorization.getGrantor() != null) {
+							try {
+								ud = userDetailsService
+										.loadUserByUsername(authorization
+												.getGrantor().getUsername());
+							} catch (UsernameNotFoundException unf) {
+								unf.printStackTrace();
+							}
+
+						} else if (authorization.getClient() != null) {
+							try {
+								ud = userDetailsService
+										.loadUserByUsername(authorization
+												.getClient().getOwner()
+												.getUsername());
+							} catch (UsernameNotFoundException unf) {
+								unf.printStackTrace();
+							}
+						}
+						if (ud != null && ud.isEnabled()
+								&& ud.isAccountNonExpired()
+								&& ud.isAccountNonLocked()) {
+							SecurityContext sc = SecurityContextHolder
+									.getContext();
+							Authentication auth = new UsernamePasswordAuthenticationToken(
+									ud, ud.getPassword(), ud.getAuthorities());
+							sc.setAuthentication(auth);
+							Map<String, Object> sessionMap = new HashMap<String, Object>(
+									2, 1);
+							sessionMap
+									.put(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
+											sc);
+							request.setAttribute(
+									HttpSessionManager.REQUEST_ATTRIBUTE_KEY_SESSION_MAP_FOR_API,
+									sessionMap);
+							request.setAttribute(
+									REQUEST_ATTRIBUTE_KEY_OAUTH_REQUEST, true);
+							request.setAttribute(
+									HttpSessionManager.REQUEST_ATTRIBUTE_KEY_SESSION_ID_FOR_API,
+									SESSION_ID_PREFIX + token);
+						}
+						Client client = authorization.getClient();
+						if (client != null) {
+							request.setAttribute(
+									REQUEST_ATTRIBUTE_KEY_OAUTH_CLIENT, client);
+							UserAgent ua = new UserAgent(
+									request.getHeader("User-Agent"));
+							ua.setAppId(client.getId());
+							ua.setAppName(client.getName());
+							request.setAttribute("userAgent", ua);
+						}
+						return false;
+					} else {
+						errorMessage = "client_disabled";
 					}
-					return false;
 				} else {
 					errorMessage = "unauthorized_scope";
 				}
@@ -126,11 +178,14 @@ public class OAuthHandler implements AccessHandler {
 		} else {
 			errorMessage = "missing_token";
 		}
+		if (httpErrorHandler != null
+				&& httpErrorHandler.handle(request, response,
+						HttpServletResponse.SC_UNAUTHORIZED, errorMessage))
+			return true;
 		try {
 			if (errorMessage != null)
 				response.getWriter().write(errorMessage);
-			response.sendError(HttpServletResponse.SC_UNAUTHORIZED,
-					errorMessage);
+			response.sendError(HttpServletResponse.SC_FORBIDDEN, errorMessage);
 		} catch (IOException e) {
 			e.printStackTrace();
 		}

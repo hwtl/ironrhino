@@ -10,7 +10,7 @@ fi
 
 #install packages
 apt-get update
-apt-get --force-yes --yes install openjdk-7-jdk ant mysql-server subversion git nginx chkconfig sysv-rc-conf fontconfig xfonts-utils zip unzip wget iptables make gcc
+apt-get --force-yes --yes install openjdk-7-jdk ant mysql-server subversion git nginx sysv-rc-conf fontconfig xfonts-utils zip unzip wget iptables make gcc
 apt-get --force-yes --yes remove openjdk-6-jre-headless
 if [ ! -f "/sbin/insserv" ] ; then
 ln -s /usr/lib/insserv/insserv /sbin/insserv
@@ -37,7 +37,7 @@ fi
 #install tomcat
 if [ ! -d tomcat8080 ];then
 if ! $(ls -l apache-tomcat-*.tar.gz >/dev/null 2>&1) ; then
-wget http://archive.apache.org/dist/tomcat/tomcat-7/v7.0.54/bin/apache-tomcat-7.0.54.tar.gz
+wget http://archive.apache.org/dist/tomcat/tomcat-7/v7.0.55/bin/apache-tomcat-7.0.55.tar.gz
 fi
 tar xvf apache-tomcat-*.tar.gz >/dev/null && rm -rf apache-tomcat-*.tar.gz
 rename s/^apache-tomcat.*$/tomcat/g apache-tomcat-*
@@ -45,13 +45,27 @@ cd tomcat && rm -rf bin/*.bat && rm -rf webapps/*
 cd conf
 sed -i  's/\s[3-4][a-x-]*manager.org.apache.juli.FileHandler,//g' logging.properties
 sed -i '/manager/d' logging.properties
-cd ..
-cd ..
-cat>tomcat/conf/server.xml<<EOF
-<?xml version='1.0' encoding='utf-8'?>
+sed -i 's/tomcat7-websocket/*/g' catalina.properties
+sed -i '/ContextConfig.jarsToSkip/d' catalina.properties
+cat>>catalina.properties<<EOF
+org.apache.catalina.startup.ContextConfig.jarsToSkip=\\
+activiti-*.jar,antlr-*.jar,aopalliance-*.jar,aspectj*.jar,bonecp-*.jar,commons-*.jar,\\
+curator-*.jar,dom4j-*.jar,dynamicreports-*.jar,eaxy-*.jar,ehcache-*.jar,\\
+elasticsearch-*.jar,freemarker-*.jar,guava-*.jar,hessian-*.jar,hibernate-*.jar,\\
+http*.jar,iText*.jar, jackson-*.jar,jasperreports-*.jar,javamail-*.jar,\\
+javassist-*.jar,jboss-logging-*.jar,jedis-*.jar, jericho-*.jar,joda-*.jar,jpa-*.jar,\\
+jsoup-*.jar,jta-*.jar,log4j-*.jar,lucene-*.jar,mmseg4j-*.jar,\\
+mongo-java-driver-*.jar,mvel2-*.jar,mybatis-*.jar,mysql-*.jar,ognl-*.jar,pinyin4j-*.jar,\\
+poi-*.jar,rabbitmq-*.jar,sitemesh-*.jar,slf4j-*.jar,spring-*.jar,struts2-*.jar,\\
+xmemcached-*.jar,xwork-*.jar,zookeeper-*.jar,zxing-*.jar,\\
+ojdbc*.jar,sqljdbc*.jar,postgresql-*.jar,db2*.jar,jconn*.jar,h2-*.jar,hsqldb-*.jar,\\
+ifxjdbc*.jar,derbyclient*.jar,rhino*.jar
+EOF
+cat>server.xml<<EOF
+<?xml version="1.0" encoding="utf-8"?>
 <Server port="\${port.shutdown}" shutdown="SHUTDOWN">
   <Service name="Catalina">
-    <Connector port="\${port.http}" connectionTimeout="20000" URIEncoding="UTF-8" useBodyEncodingForURI="true" useURIValidationHack="false" enableLookups="false" bindOnInit="false" server="ironrhino" maxPostSize="4194304" maxThreads="1000"/>
+    <Connector port="\${port.http}" connectionTimeout="20000" URIEncoding="UTF-8" useBodyEncodingForURI="true" bindOnInit="false" server="ironrhino" maxPostSize="4194304" maxThreads="1000"/>
     <Engine name="Catalina" defaultHost="localhost">
       <Host name="localhost" appBase="webapps" unpackWARs="true" autoDeploy="false">
       </Host>
@@ -59,12 +73,13 @@ cat>tomcat/conf/server.xml<<EOF
   </Service>
 </Server>
 EOF
+cd ..
+cd ..
 sed -i '99i export SPRING_PROFILES_DEFAULT' tomcat/bin/catalina.sh
 sed -i '99i SPRING_PROFILES_DEFAULT="dual"' tomcat/bin/catalina.sh
 sed -i '99i CATALINA_OPTS="-server -Xms128m -Xmx1024m -Xmn80m -Xss256k -XX:PermSize=128m -XX:MaxPermSize=512m -XX:+DisableExplicitGC -XX:+UseConcMarkSweepGC -XX:+UseCMSCompactAtFullCollection -XX:+UseParNewGC -XX:CMSMaxAbortablePrecleanTime=5 -Djava.awt.headless=true"' tomcat/bin/catalina.sh
-cp -R tomcat tomcat8080
-cp -R tomcat tomcat8081
-rm -rf tomcat
+mv tomcat tomcat8080
+cp -R tomcat8080 tomcat8081
 sed -i '99i CATALINA_PID="/tmp/tomcat8080_pid"' tomcat8080/bin/catalina.sh
 sed -i '99i JAVA_OPTS="-Dport.http=8080 -Dport.shutdown=8005"' tomcat8080/bin/catalina.sh
 sed -i '99i CATALINA_PID="/tmp/tomcat8081_pid"' tomcat8081/bin/catalina.sh
@@ -169,10 +184,12 @@ if [ \$running = 1 ];then
 tomcat8080/bin/catalina.sh stop 10 -force
 fi
 cp tomcat8080/conf/server.xml .
+cp tomcat8080/conf/catalina.properties .
 cp tomcat8080/bin/catalina.sh .
 rm -rf tomcat8080
 cp -R apache-tomcat-\$version tomcat8080
 mv server.xml tomcat8080/conf/
+mv catalina.properties tomcat8080/conf/
 mv catalina.sh tomcat8080/bin/
 cp -R tomcat8081/webapps* tomcat8080
 if [ \$running = 1 ];then
@@ -181,10 +198,12 @@ sleep 120
 tomcat8081/bin/catalina.sh stop 10 -force
 fi
 cp tomcat8081/conf/server.xml .
+cp tomcat8081/conf/catalina.properties .
 cp tomcat8081/bin/catalina.sh .
 rm -rf tomcat8081
 cp -R apache-tomcat-\$version tomcat8081
 mv server.xml tomcat8081/conf/
+mv catalina.properties tomcat8081/conf/
 mv catalina.sh tomcat8081/bin/
 cp -R tomcat8080/webapps* tomcat8081
 if [ \$running = 1 ];then
@@ -217,6 +236,7 @@ upstream  backend  {
 }
 server {
         listen   80 default_server;
+        proxy_pass_header Server;
         location ~ ^/assets/ {
                  root   /home/$USER/tomcat8080/webapps/ROOT;
                  expires      max;
@@ -453,7 +473,7 @@ fi
 
 #install redis
 if ! which redis-server > /dev/null && ! $(ls -l redis-*.tar.gz >/dev/null 2>&1) ; then
-wget http://download.redis.io/releases/redis-2.8.11.tar.gz
+wget http://download.redis.io/releases/redis-2.8.13.tar.gz
 fi
 if $(ls -l redis-*.tar.gz >/dev/null 2>&1) ; then
 tar xvf redis-*.tar.gz >/dev/null && rm -rf redis-*.tar.gz
@@ -502,7 +522,7 @@ chmod +x upgrade_redis.sh
 fi
 
 
-#svn checkout ironrhino
+#git clone ironrhino
 if [ ! -d ironrhino ];then
 git clone https://github.com/ironrhino/ironrhino.git
 chown -R $USER:$USER ironrhino

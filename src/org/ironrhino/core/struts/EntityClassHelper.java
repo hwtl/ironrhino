@@ -24,6 +24,7 @@ import javax.persistence.Embedded;
 import javax.persistence.JoinColumn;
 import javax.persistence.Lob;
 import javax.persistence.ManyToOne;
+import javax.persistence.OneToOne;
 import javax.persistence.Temporal;
 import javax.persistence.TemporalType;
 import javax.persistence.Transient;
@@ -42,6 +43,7 @@ import org.ironrhino.core.search.elasticsearch.annotations.SearchableComponent;
 import org.ironrhino.core.search.elasticsearch.annotations.SearchableId;
 import org.ironrhino.core.search.elasticsearch.annotations.SearchableProperty;
 import org.ironrhino.core.struts.AnnotationShadows.HiddenImpl;
+import org.ironrhino.core.struts.AnnotationShadows.ReadonlyImpl;
 import org.ironrhino.core.struts.AnnotationShadows.UiConfigImpl;
 import org.ironrhino.core.util.AnnotationUtils;
 import org.ironrhino.core.util.AppInfo;
@@ -141,6 +143,15 @@ public class EntityClassHelper {
 							lob = f.getAnnotation(Lob.class);
 					} catch (Exception e) {
 					}
+				OneToOne oneToOne = pd.getReadMethod().getAnnotation(
+						OneToOne.class);
+				if (oneToOne == null)
+					try {
+						Field f = declaredClass.getDeclaredField(propertyName);
+						if (f != null)
+							oneToOne = f.getAnnotation(OneToOne.class);
+					} catch (Exception e) {
+					}
 				Embedded embedded = pd.getReadMethod().getAnnotation(
 						Embedded.class);
 				Class<?> embeddedClass = null;
@@ -171,6 +182,15 @@ public class EntityClassHelper {
 					HiddenImpl hi = new HiddenImpl();
 					hi.setValue(true);
 					uci.setHiddenInInput(hi);
+					ReadonlyImpl ri = new ReadonlyImpl();
+					ri.setValue(true);
+					uci.setReadonly(ri);
+				}
+				if (oneToOne != null
+						&& StringUtils.isNotBlank(oneToOne.mappedBy())) {
+					ReadonlyImpl ri = new ReadonlyImpl();
+					ri.setValue(true);
+					uci.setReadonly(ri);
 				}
 				if (embedded != null) {
 					HiddenImpl hi = new HiddenImpl();
@@ -215,6 +235,39 @@ public class EntityClassHelper {
 						&& columnannotation.length() != 255
 						&& uci.getMaxlength() == 0)
 					uci.setMaxlength(columnannotation.length());
+				if (columnannotation != null) {
+					if (!columnannotation.updatable()
+							&& !columnannotation.insertable()) {
+						HiddenImpl hi = uci.getHiddenInInput();
+						if (hi == null || hi.isDefaultOptions()) {
+							hi = new HiddenImpl();
+							hi.setValue(true);
+							uci.setHiddenInInput(hi);
+						}
+						ReadonlyImpl ri = uci.getReadonly();
+						if (ri == null || ri.isDefaultOptions()) {
+							ri = new ReadonlyImpl();
+							ri.setValue(true);
+							uci.setReadonly(ri);
+						}
+					} else if (columnannotation.updatable()
+							&& !columnannotation.insertable()) {
+						ReadonlyImpl ri = uci.getReadonly();
+						if (ri == null || ri.isDefaultOptions()) {
+							ri = new ReadonlyImpl();
+							ri.setExpression("entity.new");
+							uci.setReadonly(ri);
+						}
+					} else if (!columnannotation.updatable()
+							&& columnannotation.insertable()) {
+						ReadonlyImpl ri = uci.getReadonly();
+						if (ri == null || ri.isDefaultOptions()) {
+							ri = new ReadonlyImpl();
+							ri.setExpression("!entity.new");
+							uci.setReadonly(ri);
+						}
+					}
+				}
 				if (lob != null || uci.getMaxlength() > 255)
 					uci.setExcludedFromOrdering(true);
 				Class<?> returnType = pd.getPropertyType();
@@ -247,6 +300,39 @@ public class EntityClassHelper {
 					if (joincolumnannotation != null
 							&& !joincolumnannotation.nullable())
 						uci.setRequired(true);
+					if (joincolumnannotation != null) {
+						if (!joincolumnannotation.updatable()
+								&& !joincolumnannotation.insertable()) {
+							HiddenImpl hi = uci.getHiddenInInput();
+							if (hi == null || hi.isDefaultOptions()) {
+								hi = new HiddenImpl();
+								hi.setValue(true);
+								uci.setHiddenInInput(hi);
+							}
+							ReadonlyImpl ri = uci.getReadonly();
+							if (ri == null || ri.isDefaultOptions()) {
+								ri = new ReadonlyImpl();
+								ri.setValue(true);
+								uci.setReadonly(ri);
+							}
+						} else if (joincolumnannotation.updatable()
+								&& !joincolumnannotation.insertable()) {
+							ReadonlyImpl ri = uci.getReadonly();
+							if (ri == null || ri.isDefaultOptions()) {
+								ri = new ReadonlyImpl();
+								ri.setExpression("entity.new");
+								uci.setReadonly(ri);
+							}
+						} else if (!joincolumnannotation.updatable()
+								&& joincolumnannotation.insertable()) {
+							ReadonlyImpl ri = uci.getReadonly();
+							if (ri == null || ri.isDefaultOptions()) {
+								ri = new ReadonlyImpl();
+								ri.setExpression("!entity.new");
+								uci.setReadonly(ri);
+							}
+						}
+					}
 					ManyToOne manyToOne = pd.getReadMethod().getAnnotation(
 							ManyToOne.class);
 					if (manyToOne == null)
@@ -264,6 +350,18 @@ public class EntityClassHelper {
 					uci.setExcludeIfNotEdited(true);
 					if (StringUtils.isBlank(uci.getPickUrl())) {
 						uci.setPickUrl(getPickUrl(returnType));
+					}
+					if (StringUtils.isBlank(uci.getListTemplate())
+							&& !uci.isSuppressViewLink()) {
+						String url = AutoConfigPackageProvider
+								.getEntityUrl(returnType);
+						if (url == null)
+							url = new StringBuilder("/").append(
+									StringUtils.uncapitalize(returnType
+											.getSimpleName())).toString();
+						uci.setListTemplate("<#if value?has_content&&value.id?has_content><a href=\""
+								+ url
+								+ "/view/${value.id}\" class=\"view\" rel=\"richtable\" title=\"${action.getText('view')}\">${value?html}</a></#if>");
 					}
 				} else if (returnType == Integer.TYPE
 						|| returnType == Short.TYPE || returnType == Long.TYPE

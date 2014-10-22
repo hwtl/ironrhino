@@ -10,6 +10,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.webapp.Configuration;
 import org.eclipse.jetty.webapp.WebAppContext;
 
 public class JettyLauncher {
@@ -17,18 +18,26 @@ public class JettyLauncher {
 	public static void start(URL warUrl) throws Exception {
 		int port = 8080;
 		String p = System.getProperty("port.http");
+		if (p == null)
+			p = System.getProperty("jetty.port");
 		if (p != null && p.trim().length() > 0)
 			port = Integer.valueOf(p);
 		Server server = new Server(port);
+		Configuration.ClassList classlist = Configuration.ClassList
+				.setServerDefault(server);
+		classlist.addBefore(
+				"org.eclipse.jetty.webapp.JettyWebXmlConfiguration",
+				"org.eclipse.jetty.annotations.AnnotationConfiguration");
 		WebAppContext context = new WebAppContext();
+		context.setContextPath("/");
+		context.setWar(warUrl.toExternalForm());
 		File tempDir = new File(new File(System.getProperty("user.home")),
 				".jetty");
 		tempDir.mkdirs();
 		context.setTempDirectory(tempDir);
-		context.setContextPath("/");
 		context.setServer(server);
 		context.addServlet(NotFoundServlet.class.getName(), "*.class");
-		context.setWar(warUrl.toExternalForm());
+
 		System.out.println("War - " + warUrl.getPath());
 		System.setProperty("executable-war", warUrl.getPath());
 		server.setHandler(context);

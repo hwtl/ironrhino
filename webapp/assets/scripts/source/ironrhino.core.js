@@ -29,18 +29,18 @@ var MODERN_BROWSER = !$.browser.msie || $.browser.version > 8;
 		$.param = function(a, traditional) {
 			if (jQuery.isArray(a) || a.jquery) {
 				jQuery.each(a, function() {
-							if (/password$/.test(this.name.toLowerCase())) {
-								try {
-									var key = $.cookie('T');
-									key = key.substring(15, 25);
-									this.value = $
-											.rc4EncryptStr(
-													encodeURIComponent(this.value
-															+ key), key);
-								} catch (e) {
-								}
-							}
-						});
+					if (/password$/.test(this.name.toLowerCase())) {
+						try {
+							var key = $.cookie('T');
+							if (key && key.length > 10)
+								key = key
+										.substring(key.length - 10, key.length);
+							this.value = $.rc4EncryptStr(
+									encodeURIComponent(this.value + key), key);
+						} catch (e) {
+						}
+					}
+				});
 
 			}
 			return temp(a, traditional);
@@ -208,22 +208,15 @@ Message = {
 				field = field.next('.chzn-container');
 			if (field.is(':visible')) {
 				field.parent().css('position', 'relative');
-				var grandpa = field.parent().parent();
-				if (grandpa.hasClass('control-group')
-						&& grandpa.parent().hasClass('tab-pane')
-						&& grandpa.is(':first-child')) {
-					grandpa.css({
-								'margin-top' : '40px'
-							});
-				}
 				var prompt = $('<div class="field-error field-error-popover"><div class="field-error-content">'
 						+ msg
 						+ '<a class="remove pull-right" href="#">&times;</a></div><div>')
 						.insertAfter(field);
-				var promptTopPosition, promptleftPosition, marginTopSize;
+				var promptTopPosition, promptleftPosition;
 				var fieldWidth = field.width();
 				var promptHeight = prompt.height();
-				promptTopPosition = field.position().top - 6;
+				promptTopPosition = field.position().top + field.outerHeight()
+						+ 6;
 				var parentWidth = field.closest('.controls').width();
 				if (parentWidth && (parentWidth - fieldWidth) < prompt.width()) {
 					promptleftPosition = field.position().left + fieldWidth
@@ -232,18 +225,13 @@ Message = {
 					promptleftPosition = field.position().left + fieldWidth
 							- 30;
 				}
-				marginTopSize = -promptHeight;
 				prompt.css({
 							"top" : promptTopPosition + "px",
 							"left" : promptleftPosition + "px",
-							"marginTop" : "-38px",
 							"opacity" : 0
 						});
 				prompt.animate({
 							"opacity" : 0.8
-						});
-				prompt.css({
-							"marginTop" : -prompt.height() + "px"
 						});
 			} else if (field.is('[type="hidden"]')) {
 				var fp = field.parent('.listpick,.treeselect');
@@ -294,7 +282,7 @@ Form = {
 			$('.field-error', $(target).parent()).fadeIn().remove();
 		}
 	},
-	validate : function(target) {
+	validate : function(target, evt) {
 		if ($(target).prop('tagName') != 'FORM') {
 			Form.clearError(target);
 			if ($(target).is('input[type="radio"]')) {
@@ -338,18 +326,20 @@ Form = {
 								+ $(target).closest('.tab-pane').attr('id')
 								+ '"]').tab('show');
 					valid = false;
-				} else if ($(target).hasClass('email')
+				} else if (evt != 'keyup'
+						&& $(target).hasClass('email')
 						&& value
 						&& !value
 								.match(/^\w+([-+.]\w+)*@\w+([-.]\w+)*\.\w+([-.]\w+)*$/)) {
 					Message.showFieldError(target, null, 'email');
 					valid = false;
-				} else if ($(target).hasClass('regex') && value
+				} else if (evt != 'keyup' && $(target).hasClass('regex')
+						&& value
 						&& !value.match(new RegExp($(target).data('regex')))) {
 					Message.showFieldError(target, null, 'regex');
 					valid = false;
-				} else if ($(target).hasClass('phone') && value
-						&& !value.match(/^[\d-]+$/)) {
+				} else if (evt != 'keyup' && $(target).hasClass('phone')
+						&& value && !value.match(/^[\d-]+$/)) {
 					Message.showFieldError(target, null, 'phone');
 					valid = false;
 				} else if (($(target).hasClass('integer') || $(target)
@@ -392,7 +382,7 @@ Form = {
 							$(target).val(value);
 						}
 					}
-				} else if ($(target).hasClass('repeat')) {
+				} else if (evt != 'keyup' && $(target).hasClass('repeat')) {
 					if (value != $(
 							'[name="' + $(target).data('repeatwith') + '"]',
 							$(target).closest('form')).val()) {
@@ -537,8 +527,20 @@ Ajax = {
 			}
 			var html = data.replace(/<script(.|\s)*?\/script>/g, '');
 			var div = $('<div/>').html(html);
-			// others
 			var replacement = options.replacement;
+			if (typeof replacement == 'string') {
+				var map = {};
+				var entries = replacement.split(',');
+				var arr = [];
+				for (var i = 0; i < entries.length; i++) {
+					var entry = entries[i];
+					var ss = entry.split(':', 2);
+					var sss = ss.length == 2 ? ss[1] : ss[0];
+					map[ss[0]] = sss;
+					arr.push(sss != Ajax.defaultRepacement ? sss : '_');
+				}
+				replacement = map;
+			}
 			for (var key in replacement) {
 				var r = $('#' + key);
 				if (key == Ajax.defaultRepacement && !r.length)
@@ -749,27 +751,26 @@ Initialization.common = function() {
 						});
 			}).on('click', '.removeonclick', function() {
 				$(this).remove()
-			}).on('click', '.control-group .field-error .remove', function(e) {
+			}).on('click', '.field-error .remove', function(e) {
 				Form.clearError($(e.target).closest('.control-group'));
+				$(e.target).closest('.field-error').remove();
 				return false;
 			}).on('validate', ':input', function(ev) {
-				Form.validate(this);
+				Form.validate(this, 'validate');
 			}).on('keyup', 'input,textarea', $.debounce(200, function(ev) {
-				if ($(this).hasClass('required') || !$(this).hasClass('email')
-						&& !$(this).hasClass('regex')
-						&& !$(this).hasClass('repeat') && ev.keyCode != 13)
-					if ($(this).val())
-						Form.validate(this);
+						if ($(this).val()) {
+							if (ev.keyCode != 13)
+								Form.validate(this, 'keyup');
+						} else {
+							Form.clearError($(this));
+						}
+						return true;
+					})).on('change', 'input,textarea', function(ev) {
+				if (this.value != this.defaultValue)
+					Form.validate(this, 'change');
 				return true;
-			})).on('focusout', 'input,textarea', function(ev) {
-		if (this.value != this.defaultValue)
-			if ($(this).hasClass('email') || $(this).hasClass('regex')
-					|| $(this).hasClass('repeat')
-					|| !$(this).hasClass('required'))
-				Form.validate(this);
-		return true;
-	}).on('change', 'select', function() {
-				Form.validate(this);
+			}).on('change', 'select', function() {
+				Form.validate(this, 'change');
 				return true;
 			}).on('dblclick', '.ui-dialog-titlebar', function() {
 		Dialog.toggleMaximization($('.ui-dialog-content', $(this)
@@ -802,8 +803,7 @@ Initialization.common = function() {
 			}).on('click', 'img.captcha', Captcha.refresh).on('focus',
 			'input.captcha', function() {
 				var t = $(this);
-
-				if (t.next('img.captcha').length)
+				if (t.siblings('img.captcha').length)
 					return;
 				t.after('<img class="captcha" src="' + t.data('captcha')
 						+ '"/>');
@@ -873,7 +873,7 @@ Initialization.common = function() {
 		});
 	}
 	if ($(document.body).hasClass('render-location-qrcode')) {
-		$('<div id="render-location-qrcode" style="width:15px;position:fixed;bottom:0;right:0;cursor:pointer;"><i class="glyphicon glyphicon-qrcode"></i></div>')
+		$('<div id="render-location-qrcode" class="hidden-phone hidden-tablet" style="width:15px;position:fixed;bottom:0;right:0;cursor:pointer;"><i class="glyphicon glyphicon-qrcode"></i></div>')
 				.appendTo(document.body);
 		$('#render-location-qrcode').click(function() {
 			var _this = $(this);
@@ -901,6 +901,10 @@ Initialization.common = function() {
 								t.text(DateUtils.humanRead(t.attr('title')));
 							});
 				}, 60 * 1000);
+	}
+	if ($('body').hasClass('welcome')) {
+		$('<section id="powered-by">Powered by Ironrhino</section>')
+				.appendTo(document.body);
 	}
 };
 
@@ -1049,7 +1053,7 @@ Observation.common = function(container) {
 					c.attr('class', c.data('originalclass') + ' ' + sw.val());
 				});
 	});
-	$(':input.conjunct', container).change(function() {
+	$(':input.conjunct', container).bind('conjunct', function() {
 				var t = $(this);
 				var f = $(this).closest('form');
 				var data = {};
@@ -1076,6 +1080,9 @@ Observation.common = function(container) {
 							replacement : t.data('replacement')
 						});
 			});
+	$(':input.conjunct', container).change(function() {
+				var t = $(this).trigger('conjunct');
+			});
 	// if (typeof $.fn.datepicker != 'undefined')
 	// $('input.date:not([readonly]):not([disabled])', container).datepicker({
 	// dateFormat : 'yy-mm-dd'
@@ -1098,7 +1105,7 @@ Observation.common = function(container) {
 						option.pickTime = false;
 					}
 					t.datetimepicker(option).on('changeDate', function(e) {
-								t.trigger('validate');
+								t.trigger('validate').trigger('conjunct');
 								var dp = t.data('datetimepicker');
 								if (dp && dp.widget.is(':visible'))
 									dp.hide();
@@ -1287,8 +1294,7 @@ Observation.common = function(container) {
 								+ (modalwidth ? ' style="width:' + modalwidth
 										+ ';"' : '')
 								+ '><div class="modal-header"><a class="close" data-dismiss="modal">&times;</a><h3 style="text-align:center;">'
-								+ title
-								+ '</h3></div><div class="modal-body" style="padding-top:40px;">'
+								+ title + '</h3></div><div class="modal-body">'
 								+ body + '</div></div>')
 								.appendTo(document.body);
 						_observe($('#' + id));
@@ -1623,13 +1629,24 @@ var Dialog = {
 			$(iframe).height(height);
 			hasRow = $('div.row', doc).length > 0;
 		}
-		if (hasRow)
-			d.dialog('option', 'width', '90%');
-		d.dialog('option', 'position', 'center');
-		// var height = d.height();
-		// if (height >= $(window).height())
-		// d.dialog('option', 'position', 'top');
 		d.dialog('moveToTop');
+		if (hasRow) {
+			d.dialog('option', 'width', '90%');
+		}
+		var height = d.height();
+		if (height >= $(window).height()) {
+			d.dialog('option', 'position', {
+						my : 'top',
+						at : 'top',
+						of : window
+					});
+		} else {
+			d.dialog('option', 'position', {
+						my : 'center',
+						at : 'center',
+						of : window
+					});
+		}
 	},
 	toggleMaximization : function(d) {
 		var dialog = $(d).closest('.ui-dialog');
@@ -1647,19 +1664,24 @@ var Dialog = {
 			dialog.outerWidth(viewportWidth);
 			if (dialog.outerHeight() < viewportHeight)
 				dialog.outerHeight(viewportHeight);
-			d.dialog('option', 'position', 'top');
+			d.dialog('option', 'position', {
+						my : 'top',
+						at : 'top',
+						of : window
+					});
 		}
 	}
 }
 
 Captcha = {
 	refresh : function() {
+		var r = Math.random();
 		$('img.captcha').each(function() {
 					var src = this.src;
 					var i = src.lastIndexOf('&');
 					if (i > 0)
 						src = src.substring(0, i);
-					this.src = src + '&' + Math.random();
+					this.src = src + '&' + r;
 				});
 		$('input.captcha').val('').focus();
 	}
@@ -1682,8 +1704,17 @@ ArrayUtils = {
 DateUtils = {
 	humanRead : function(date) {
 		if (typeof date == 'string') {
-			string = true;
+			var string = date;
 			date = new Date(date);
+			if (isNaN(date.getTime())) {
+				var arr = string.split(' ');
+				date = new Date(arr[0]);
+				string = arr[1];
+				arr = string.split(':');
+				date.setHours(parseInt(arr[0]));
+				date.setMinutes(parseInt(arr[1]));
+				date.setSeconds(parseInt(arr[2]));
+			}
 		}
 		var now = new Date();
 		var delta = now.getTime() - date.getTime();
@@ -1715,7 +1746,7 @@ DateUtils = {
 		} else if (delta < 31104000) {
 			s = Math.floor(delta / 2592000) + "个月";
 		} else {
-			s = Math.floor(delta / 31104000) + "年";
+			s = Math.floor(delta / 3110400) / 10 + "年";
 		}
 		return s + (before ? "前" : "后");
 

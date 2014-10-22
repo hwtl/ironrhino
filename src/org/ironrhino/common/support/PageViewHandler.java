@@ -11,12 +11,13 @@ import org.ironrhino.core.servlet.AccessHandler;
 import org.ironrhino.core.session.HttpSessionManager;
 import org.ironrhino.core.util.RequestUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 @Component
-@Order(Integer.MIN_VALUE)
-public class PageViewHandler implements AccessHandler {
+@Order(Ordered.HIGHEST_PRECEDENCE + 1)
+public class PageViewHandler extends AccessHandler {
 
 	@Autowired(required = false)
 	private PageViewService pageViewService;
@@ -28,15 +29,12 @@ public class PageViewHandler implements AccessHandler {
 	private HttpSessionManager httpSessionManager;
 
 	@Override
-	public String getPattern() {
-		return null;
-	}
-
-	@Override
 	public boolean handle(final HttpServletRequest request,
 			HttpServletResponse response) {
+		String qs = request.getQueryString();
 		if (pageViewService != null
 				&& request.getMethod().equalsIgnoreCase("GET")
+				&& (qs == null || !qs.contains("_internal_testing_"))
 				&& !request.getRequestURI().startsWith("/assets/")
 				&& !request.getRequestURI().endsWith("/favicon.ico")) {
 			final String remoteAddr = RequestUtils.getRemoteAddr(request);

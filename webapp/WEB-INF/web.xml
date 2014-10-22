@@ -8,10 +8,9 @@
 			classpath*:resources/spring/applicationContext-*.xml
 		</param-value>
 	</context-param>
-	<absolute-ordering/>
 	<filter>
 		<filter-name>characterEncodingFilter</filter-name>
-		<filter-class>org.springframework.web.filter.CharacterEncodingFilter</filter-class>
+		<filter-class>org.ironrhino.core.servlet.CharacterEncodingFilter</filter-class>
 		<init-param>
 			<param-name>encoding</param-name>
 			<param-value>UTF-8</param-value>
@@ -156,5 +155,9 @@
 	<error-page>
 		<error-code>403</error-code>
 		<location>/error/handle/403</location>
+	</error-page>
+	<error-page>
+		<error-code>401</error-code>
+		<location>/error/handle/401</location>
 	</error-page>
 </web-app>

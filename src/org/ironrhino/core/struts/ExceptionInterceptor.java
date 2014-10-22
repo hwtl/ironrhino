@@ -3,6 +3,8 @@ package org.ironrhino.core.struts;
 import java.util.List;
 import java.util.Map;
 
+import ognl.MethodFailedException;
+
 import org.ironrhino.core.util.ErrorMessage;
 import org.ironrhino.core.util.ExceptionUtils;
 import org.slf4j.Logger;
@@ -27,6 +29,8 @@ public class ExceptionInterceptor extends AbstractInterceptor {
 		try {
 			result = invocation.invoke();
 		} catch (Throwable e) {
+			if (e instanceof MethodFailedException)
+				e = e.getCause();
 			if (e instanceof NoSuchMethodException) {
 				result = BaseAction.NOTFOUND;
 			} else {
@@ -39,14 +43,7 @@ public class ExceptionInterceptor extends AbstractInterceptor {
 							|| cause instanceof OptimisticLockingFailureException) {
 						validationAwareAction.addActionError(findText(
 								"try.again.later", null));
-					} 
-					// else if (e instanceof DataIntegrityViolationException
-					// || cause instanceof DataIntegrityViolationException) {
-					// validationAwareAction.addActionError(findText(
-					// "validation.already.exists", null));
-					// log.error(e.getMessage(), e);
-					// }
-					else {
+					} else {
 						if (cause != null)
 							while (cause.getCause() != null)
 								cause = cause.getCause();
@@ -73,7 +70,10 @@ public class ExceptionInterceptor extends AbstractInterceptor {
 							validationAwareAction.addActionError(em
 									.getLocalizedMessage());
 						} else {
+
 							String msg = e.getMessage();
+							if (cause != null)
+								msg = cause.getMessage();
 							if (msg == null)
 								msg = ExceptionUtils.getDetailMessage(e);
 							validationAwareAction.addActionError(msg);

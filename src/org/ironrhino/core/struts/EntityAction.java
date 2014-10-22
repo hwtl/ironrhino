@@ -1,6 +1,5 @@
 package org.ironrhino.core.struts;
 
-import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.Serializable;
 import java.io.StringWriter;
@@ -32,7 +31,6 @@ import org.ironrhino.core.hibernate.CriterionUtils;
 import org.ironrhino.core.metadata.Authorize;
 import org.ironrhino.core.metadata.CaseInsensitive;
 import org.ironrhino.core.metadata.JsonConfig;
-import org.ironrhino.core.metadata.NotInJson;
 import org.ironrhino.core.metadata.Owner;
 import org.ironrhino.core.metadata.Readonly;
 import org.ironrhino.core.metadata.Richtable;
@@ -67,6 +65,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.security.core.userdetails.UserDetails;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.opensymphony.xwork2.ActionContext;
 import com.opensymphony.xwork2.ActionProxy;
 import com.opensymphony.xwork2.inject.Inject;
@@ -314,7 +313,7 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 	}
 
 	@Override
-	public String execute() {
+	public String execute() throws Exception {
 		BeanWrapperImpl bw;
 		try {
 			bw = new BeanWrapperImpl(getEntityClass().newInstance());
@@ -326,7 +325,6 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 		if (richtableConfig == null)
 			richtableConfig = getEntityClass().getAnnotation(Richtable.class);
 		final BaseManager entityManager = getEntityManager(getEntityClass());
-		Map<String, String> aliases = new HashMap<String, String>();
 		boolean searchable = isSearchable();
 		if (searchable
 				&& StringUtils.isNumeric(keyword)
@@ -439,7 +437,7 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 					&& resultPage.getPageSize() != richtableConfig
 							.defaultPageSize())
 				resultPage.setPageSize(richtableConfig.defaultPageSize());
-			if (richtableConfig != null)
+			if (richtableConfig != null && resultPage.getPaginating() == null)
 				resultPage.setPaginating(richtableConfig.paginating());
 			resultPage.setCriteria(dc);
 			if (criteriaState.getOrderings().isEmpty()) {
@@ -456,13 +454,15 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 									.indexOf(".") + 1);
 							Class type = bw.getPropertyType(p1);
 							if (Persistable.class.isAssignableFrom(type)) {
-								String alias = aliases.get(p1);
+								String alias = criteriaState.getAliases().get(
+										p1);
 								if (alias == null) {
 									alias = p1 + "_";
-									while (aliases.containsValue(alias))
+									while (criteriaState.getAliases()
+											.containsValue(alias))
 										alias += "_";
 									dc.createAlias(p1, alias);
-									aliases.put(p1, alias);
+									criteriaState.getAliases().put(p1, alias);
 								}
 								propertyName = alias + "." + p2;
 							}
@@ -540,7 +540,7 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 	}
 
 	@Override
-	public String input() {
+	public String input() throws Exception {
 		if (getReadonly().isValue()) {
 			addActionError(getText("access.denied"));
 			return ACCESSDENIED;
@@ -652,7 +652,7 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 	}
 
 	@Override
-	public String save() {
+	public String save() throws Exception {
 		if (getReadonly().isValue()) {
 			addActionError(getText("access.denied"));
 			return ACCESSDENIED;
@@ -1174,10 +1174,10 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 	}
 
 	@Override
-	public String view() {
+	public String view() throws Exception {
 		tryFindEntity();
 		if (_entity == null)
-			return NOTFOUND;
+			return isAjax() ? NONE : NOTFOUND;
 		Tuple<Owner, Class<? extends UserDetails>> ownerProperty = getOwnerProperty();
 		if (ownerProperty != null) {
 			Owner owner = ownerProperty.getKey();
@@ -1199,7 +1199,7 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 		return VIEW;
 	}
 
-	public String export() throws IOException {
+	public String export() throws Exception {
 		if (!getRichtableConfig().isExportable())
 			return NOTFOUND;
 		tryFindEntity();
@@ -1223,10 +1223,10 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 			}
 		}
 		Map<String, Object> map = new LinkedHashMap<String, Object>();
-		Set<String> notInJsons = AnnotationUtils.getAnnotatedPropertyNames(
-				getEntityClass(), NotInJson.class);
+		Set<String> jsonIgnores = AnnotationUtils.getAnnotatedPropertyNames(
+				getEntityClass(), JsonIgnore.class);
 		for (Map.Entry<String, UiConfigImpl> entry : getUiConfigs().entrySet()) {
-			if (notInJsons.contains(entry.getKey()))
+			if (jsonIgnores.contains(entry.getKey()))
 				continue;
 			Object value = bwi.getPropertyValue(entry.getKey());
 			if (value == null)
@@ -1257,7 +1257,7 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 	}
 
 	@Override
-	public String delete() {
+	public String delete() throws Exception {
 		if (getReadonly().isValue() && !getReadonly().isDeletable()) {
 			addActionError(getText("access.denied"));
 			return ACCESSDENIED;
@@ -1339,13 +1339,13 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 		return SUCCESS;
 	}
 
-	public String enable() {
+	public String enable() throws Exception {
 		if (!isEnableable() || getReadonly().isValue())
 			return ACCESSDENIED;
 		return updateEnabled(true);
 	}
 
-	public String disable() {
+	public String disable() throws Exception {
 		if (!isEnableable() || getReadonly().isValue())
 			return ACCESSDENIED;
 		return updateEnabled(false);
@@ -1411,7 +1411,7 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 	}
 
 	@InputConfig(resultName = "move")
-	public String move() {
+	public String move() throws Exception {
 		if (!isTreeable())
 			return NOTFOUND;
 		String id = getUid();

@@ -11,11 +11,12 @@ import java.util.Map;
 
 import javax.persistence.Lob;
 
-import org.ironrhino.core.metadata.NotInJson;
+import org.ironrhino.core.util.AppInfo.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
@@ -61,13 +62,9 @@ public class JsonUtils {
 					protected boolean _isIgnorable(Annotated a) {
 						boolean b = super._isIgnorable(a);
 						if (!b) {
-							NotInJson notInJson = a
-									.getAnnotation(NotInJson.class);
-							b = notInJson != null;
-							if (!b) {
-								Lob lob = a.getAnnotation(Lob.class);
-								b = lob != null;
-							}
+							Lob lob = a.getAnnotation(Lob.class);
+							b = lob != null
+									&& a.getAnnotation(JsonProperty.class) == null;
 						}
 						return b;
 					}
@@ -75,6 +72,8 @@ public class JsonUtils {
 				});
 		objectMapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 		objectMapper.disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
+		if (AppInfo.getStage() == Stage.DEVELOPMENT)
+			objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
 		return objectMapper;
 	}
 

@@ -39,9 +39,10 @@
 					<#assign template=config.viewTemplate/>
 					</#if>
 					<#if !template?has_content>
+						<#assign cssClass=config.cssClass?replace('input-[^ ]+', '', 'r')>
 						<#if config.type=='textarea'>
 							<#if value?has_content>
-							<div style="white-space:pre-wrap;word-break:break-all;"<#if config.cssClass?has_content> class="${config.cssClass}"</#if>>${value!}</div>
+							<div style="white-space:pre-wrap;word-break:break-all;"<#if cssClass?has_content> class="${cssClass}"</#if>>${value!}</div>
 							</#if>
 						<#elseif config.type=='dictionary'>
 							<#if displayDictionaryLabel??>
@@ -107,7 +108,7 @@
 			<#if !template?has_content>
 				<#if config.type=='textarea'>
 					<#if value?has_content>
-					<div style="white-space:pre-wrap;word-break:break-all;"<#if config.cssClass?has_content> class="${config.cssClass}"</#if>>${value!}</div>
+					<div style="white-space:pre-wrap;word-break:break-all;"<#if cssClass?has_content> class="${cssClass}"</#if>>${value!}</div>
 					</#if>
 				<#elseif config.type=='dictionary'>
 					<#if displayDictionaryLabel??>
@@ -129,6 +130,7 @@
 						<tr>
 							<#list embeddedUiConfigs.entrySet() as entry>
 							<#assign config=entry.value>
+							<#assign cssClass=config.cssClass?replace('input-[^ ]+', '', 'r')>
 							<#assign hidden=config.hiddenInView.value>
 							<#if !hidden && config.hiddenInView.expression?has_content>
 								<#assign hidden=config.hiddenInView.expression?eval>
@@ -151,6 +153,7 @@
 						<tr>
 							<#list embeddedUiConfigs.entrySet() as entry>
 							<#assign config = entry.value>
+							<#assign cssClass=config.cssClass?replace('input-[^ ]+', '', 'r')>
 							<#assign value=element[entry.key]!>
 							<#assign hidden=config.hiddenInView.value>
 							<#if !hidden && config.hiddenInView.expression?has_content>
@@ -165,7 +168,7 @@
 							<#if !template?has_content>
 								<#if config.type=='textarea'>
 									<#if value?has_content>
-									<div style="white-space:pre-wrap;word-break:break-all;"<#if config.cssClass?has_content> class="${config.cssClass}"</#if>>${value!}</div>
+									<div style="white-space:pre-wrap;word-break:break-all;"<#if cssClass?has_content> class="${cssClass}"</#if>>${value!}</div>
 									</#if>
 								<#elseif config.type=='dictionary'>
 									<#if displayDictionaryLabel??>
@@ -228,7 +231,9 @@
 							<ol class="unstyled">
 							<#list value as item>
 								<li>
-								<#if item?is_sequence>
+								<#if item?is_string||item?is_number||item?is_boolean||item?is_date>
+										${item!}
+								<#elseif item?is_sequence>
 										<ol class="unstyled" style="padding-bottom:10px;">
 										<#list item as it>
 											<li>${it}</li>

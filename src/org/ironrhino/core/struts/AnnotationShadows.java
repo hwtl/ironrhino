@@ -59,6 +59,7 @@ public class AnnotationShadows {
 		private boolean searchable;
 		private Set<String> nestSearchableProperties;
 		private Map<String, UiConfigImpl> embeddedUiConfigs;
+		private boolean suppressViewLink;
 
 		public UiConfigImpl() {
 		}
@@ -121,6 +122,7 @@ public class AnnotationShadows {
 			this.excludedFromOrdering = config.excludedFromOrdering();
 			this.group = config.group();
 			this.searchable = config.searchable();
+			this.suppressViewLink = config.suppressViewLink();
 		}
 
 		public String getGroup() {
@@ -429,6 +431,14 @@ public class AnnotationShadows {
 			this.searchable = searchable;
 		}
 
+		public boolean isSuppressViewLink() {
+			return suppressViewLink;
+		}
+
+		public void setSuppressViewLink(boolean suppressViewLink) {
+			this.suppressViewLink = suppressViewLink;
+		}
+
 		public Set<String> getNestSearchableProperties() {
 			return nestSearchableProperties;
 		}
@@ -491,6 +501,10 @@ public class AnnotationShadows {
 			this.deletable = deletable;
 		}
 
+		public boolean isDefaultOptions() {
+			return !value && "".equals(expression) && !deletable;
+		}
+
 	}
 
 	public static class HiddenImpl implements Serializable {
@@ -529,6 +543,10 @@ public class AnnotationShadows {
 
 		public void setExpression(String expression) {
 			this.expression = expression;
+		}
+
+		public boolean isDefaultOptions() {
+			return !value && "".equals(expression);
 		}
 
 	}

@@ -12,7 +12,10 @@ import org.springframework.stereotype.Component;
 
 @Component
 @Order(Integer.MIN_VALUE + 1)
-public class CorsHandler implements AccessHandler {
+public class CorsHandler extends AccessHandler {
+
+	@Value("${cors.openForAllOrigin:false}")
+	private boolean openForAllOrigin;
 
 	@Value("${cors.openForSameOrigin:true}")
 	private boolean openForSameOrigin;
@@ -21,21 +24,18 @@ public class CorsHandler implements AccessHandler {
 	private String xFrameOptions = "SAMEORIGIN";
 
 	@Override
-	public String getPattern() {
-		return null;
-	}
-
-	@Override
 	public boolean handle(HttpServletRequest request,
 			HttpServletResponse response) {
+		response.setHeader("X-Powered-By", "Ironrhino");
 		response.setHeader("X-Frame-Options", xFrameOptions);
 		String origin = request.getHeader("Origin");
 		if (StringUtils.isNotBlank(origin)) {
 			if (!("Upgrade".equalsIgnoreCase(request.getHeader("Connection")) && "WebSocket"
 					.equalsIgnoreCase(request.getHeader("Upgrade")))) {
 				String url = request.getRequestURL().toString();
-				if ((openForSameOrigin || RequestUtils
-						.isSameOrigin(url, origin)) && !url.startsWith(origin)) {
+				if (openForAllOrigin || openForSameOrigin
+						&& RequestUtils.isSameOrigin(url, origin)
+						&& !url.startsWith(origin)) {
 					response.setHeader("Access-Control-Allow-Origin", origin);
 					response.setHeader("Access-Control-Allow-Credentials",
 							"true");

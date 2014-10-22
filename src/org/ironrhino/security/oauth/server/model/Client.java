@@ -5,7 +5,6 @@ import java.util.Date;
 import javax.persistence.Column;
 import javax.persistence.ConstraintMode;
 import javax.persistence.Entity;
-import javax.persistence.FetchType;
 import javax.persistence.ForeignKey;
 import javax.persistence.JoinColumn;
 import javax.persistence.ManyToOne;
@@ -16,6 +15,7 @@ import org.hibernate.annotations.NaturalId;
 import org.ironrhino.core.metadata.Authorize;
 import org.ironrhino.core.metadata.AutoConfig;
 import org.ironrhino.core.metadata.CaseInsensitive;
+import org.ironrhino.core.metadata.Hidden;
 import org.ironrhino.core.metadata.NotInCopy;
 import org.ironrhino.core.metadata.Richtable;
 import org.ironrhino.core.metadata.UiConfig;
@@ -29,48 +29,53 @@ import org.ironrhino.security.model.User;
 @Authorize(ifAllGranted = UserRole.ROLE_ADMINISTRATOR)
 @Entity
 @Table(name = "oauth_client")
-@Richtable(order = "name asc")
+@Richtable(order = "name asc", celleditable = false)
 public class Client extends BaseEntity implements Enableable {
 
 	private static final long serialVersionUID = -7297737795748467475L;
 
 	public static final String OAUTH_OOB = "urn:ietf:wg:oauth:2.0:oob";
 
-	@UiConfig(displayOrder = 1, cssClass = "span4")
+	@UiConfig(displayOrder = 1, cssClass = "input-xxlarge")
 	@CaseInsensitive
 	@NaturalId(mutable = true)
 	@Column(nullable = false)
 	private String name;
 
-	@UiConfig(displayOrder = 2, cssClass = "span4", excludedFromCriteria = true)
+	@UiConfig(displayOrder = 3, alias = "client_secret", cssClass = "input-xxlarge", width = "200px", excludedFromCriteria = true)
 	@Column(nullable = false)
 	private String secret = CodecUtils.nextId();
 
-	@UiConfig(displayOrder = 3, cssClass = "span4")
+	@UiConfig(displayOrder = 4, cssClass = "input-xxlarge", hiddenInList = @Hidden(true))
 	private String redirectUri;
 
-	@UiConfig(displayOrder = 4, cssClass = "span4", type = "textarea")
+	@UiConfig(displayOrder = 5, cssClass = "input-xxlarge", type = "textarea", hiddenInList = @Hidden(true))
 	@Column(length = 4000)
 	private String description;
 
 	@NotInCopy
-	@UiConfig(displayOrder = 5, width = "200px")
-	@ManyToOne(optional = false, fetch = FetchType.LAZY)
+	@UiConfig(displayOrder = 6, width = "150px")
+	@ManyToOne(optional = false)
 	@JoinColumn(name = "owner", foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT))
 	private User owner;
 
-	@UiConfig(displayOrder = 6, width = "80px")
+	@UiConfig(displayOrder = 7, width = "80px")
 	private boolean enabled = true;
 
 	@NotInCopy
-	@UiConfig(hidden = true)
+	@UiConfig(displayOrder = 8, hiddenInInput = @Hidden(true), hiddenInList = @Hidden(true))
+	@Column(updatable = false)
+	private Date createDate = new Date();
+
+	@NotInCopy
+	@UiConfig(displayOrder = 9, hiddenInInput = @Hidden(true), hiddenInList = @Hidden(true))
 	@Column(insertable = false)
 	private Date modifyDate;
 
-	@NotInCopy
-	@UiConfig(hidden = true)
-	@Column(updatable = false)
-	private Date createDate = new Date();
+	@UiConfig(displayOrder = 2, width = "200px", alias = "client_id")
+	public String getClientId() {
+		return getId();
+	}
 
 	public String getName() {
 		return name;

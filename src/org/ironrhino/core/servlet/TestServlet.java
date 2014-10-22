@@ -29,7 +29,7 @@ public class TestServlet extends HttpServlet {
 						logger.warn("test failed,no response,please check it");
 				} else {
 					String contextPath = getServletContext().getContextPath();
-					String format = "http://localhost%s%s";
+					String format = "http://localhost%s%s?_internal_testing_";
 					int port = AppInfo.getHttpPort();
 					String context = (contextPath.indexOf('/') == 0 ? "" : "/")
 							+ contextPath;

@@ -14,6 +14,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.struts2.ServletActionContext;
 import org.ironrhino.core.metadata.AutoConfig;
 import org.ironrhino.core.metadata.JsonConfig;
+import org.ironrhino.core.security.role.UserRole;
+import org.ironrhino.core.servlet.HttpErrorHandler;
 import org.ironrhino.core.spring.security.DefaultUsernamePasswordAuthenticationFilter;
 import org.ironrhino.core.struts.BaseAction;
 import org.ironrhino.core.util.AuthzUtils;
@@ -29,6 +31,8 @@ import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
 import com.google.common.base.Objects;
 
@@ -39,6 +43,12 @@ public class Oauth2Action extends BaseAction {
 
 	@Autowired
 	private transient OAuthManager oauthManager;
+
+	@Autowired(required = false)
+	private HttpErrorHandler httpErrorHandler;
+
+	@Autowired
+	private transient UserDetailsService userDetailsService;
 
 	@Autowired
 	private transient DefaultUsernamePasswordAuthenticationFilter usernamePasswordAuthenticationFilter;
@@ -55,6 +65,7 @@ public class Oauth2Action extends BaseAction {
 	private String state;
 	private String access_token;
 	private String refresh_token;
+	private String token;
 	private String approval_prompt;
 	private Authorization authorization;
 	private Client client;
@@ -114,6 +125,14 @@ public class Oauth2Action extends BaseAction {
 
 	public void setRefresh_token(String refresh_token) {
 		this.refresh_token = refresh_token;
+	}
+
+	public String getToken() {
+		return token;
+	}
+
+	public void setToken(String token) {
+		this.token = token;
 	}
 
 	public String getCode() {
@@ -226,6 +245,12 @@ public class Oauth2Action extends BaseAction {
 			displayForNative = client.isNative();
 			setUid(authorization.getId());
 		} catch (Exception e) {
+			if (httpErrorHandler != null
+					&& httpErrorHandler.handle(
+							ServletActionContext.getRequest(),
+							ServletActionContext.getResponse(),
+							HttpServletResponse.SC_BAD_REQUEST, e.getMessage()))
+				return NONE;
 			try {
 				ServletActionContext.getResponse().sendError(
 						HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
@@ -311,14 +336,19 @@ public class Oauth2Action extends BaseAction {
 				targetUrl = sb.toString();
 			}
 		} catch (Exception e) {
-			e.printStackTrace();
+			if (httpErrorHandler != null
+					&& httpErrorHandler.handle(
+							ServletActionContext.getRequest(),
+							ServletActionContext.getResponse(),
+							HttpServletResponse.SC_BAD_REQUEST, e.getMessage()))
+				return NONE;
 			try {
 				ServletActionContext.getResponse().sendError(
 						HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
-				return NONE;
 			} catch (IOException e1) {
 				e1.printStackTrace();
 			}
+			return NONE;
 		}
 		return REDIRECT;
 	}
@@ -345,66 +375,181 @@ public class Oauth2Action extends BaseAction {
 
 	@JsonConfig(root = "tojson")
 	public String token() {
-		if (!"authorization_code".equals(grant_type))
-			if ("refresh_token".equals(grant_type)) {
-				authorization = oauthManager.refresh(refresh_token);
-				tojson = new HashMap<String, Object>();
-				if (authorization == null) {
-					tojson.put("error", "invalid_token");
-				} else {
-					tojson.put("access_token", authorization.getAccessToken());
-					tojson.put("expires_in", authorization.getExpiresIn());
-					tojson.put("refresh_token", authorization.getRefreshToken());
+		if ("password".equals(grant_type)) {
+			client = oauthManager.findClientById(client_id);
+			try {
+				if (client == null)
+					throw new IllegalArgumentException("CLIENT_ID_NOT_EXISTS");
+				if (!client.getSecret().equals(client_secret))
+					throw new IllegalArgumentException("CLIENT_SECRET_MISMATCH");
+				if (client.getOwner() == null
+						|| !client.getOwner().getRoles()
+								.contains(UserRole.ROLE_ADMINISTRATOR))
+					throw new IllegalArgumentException("CLIENT_UNAUTHORIZED");
+				try {
+					User u = (User) userDetailsService
+							.loadUserByUsername(username);
+					if (!AuthzUtils.isPasswordValid(u, password))
+						throw new IllegalArgumentException("PASSWORD_MISMATCH");
+					authorization = oauthManager.grant(client, u);
+				} catch (UsernameNotFoundException e) {
+					throw new IllegalArgumentException("USERNAME_NOT_EXISTS");
 				}
-			} else {
+			} catch (Exception e) {
+				if (httpErrorHandler != null
+						&& httpErrorHandler.handle(
+								ServletActionContext.getRequest(),
+								ServletActionContext.getResponse(),
+								HttpServletResponse.SC_BAD_REQUEST,
+								e.getMessage()))
+					return NONE;
 				try {
 					ServletActionContext.getResponse().sendError(
-							HttpServletResponse.SC_BAD_REQUEST,
-							"grant_type must be authorization_code");
+							HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
 					return NONE;
 				} catch (IOException e1) {
 					e1.printStackTrace();
 				}
+				return NONE;
 			}
-		client = new Client();
-		client.setId(client_id);
-		client.setSecret(client_secret);
-		client.setRedirectUri(redirect_uri);
-		try {
-			authorization = oauthManager.authenticate(code, client);
 			tojson = new HashMap<String, Object>();
 			tojson.put("access_token", authorization.getAccessToken());
-			tojson.put("expires_in", authorization.getExpiresIn());
 			tojson.put("refresh_token", authorization.getRefreshToken());
-		} catch (Exception e) {
-			e.printStackTrace();
+			tojson.put("expires_in", authorization.getExpiresIn());
+			return JSON;
+		} else if ("client_credential".equals(grant_type)) {
+			client = new Client();
+			client.setId(client_id);
+			client.setSecret(client_secret);
 			try {
-				ServletActionContext.getResponse().sendError(
-						HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
-			} catch (IOException e1) {
-				e1.printStackTrace();
+				authorization = oauthManager.grant(client);
+			} catch (Exception e) {
+				if (httpErrorHandler != null
+						&& httpErrorHandler.handle(
+								ServletActionContext.getRequest(),
+								ServletActionContext.getResponse(),
+								HttpServletResponse.SC_BAD_REQUEST,
+								e.getMessage()))
+					return NONE;
+				try {
+					ServletActionContext.getResponse().sendError(
+							HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+					return NONE;
+				} catch (IOException e1) {
+					e1.printStackTrace();
+				}
+				return NONE;
 			}
-			return NONE;
+			tojson = new HashMap<String, Object>();
+			tojson.put("access_token", authorization.getAccessToken());
+			tojson.put("refresh_token", authorization.getRefreshToken());
+			tojson.put("expires_in", authorization.getExpiresIn());
+			return JSON;
+		} else if ("refresh_token".equals(grant_type)) {
+			client = new Client();
+			client.setId(client_id);
+			client.setSecret(client_secret);
+			try {
+				authorization = oauthManager.refresh(client, refresh_token);
+				tojson = new HashMap<String, Object>();
+				tojson.put("access_token", authorization.getAccessToken());
+				tojson.put("expires_in", authorization.getExpiresIn());
+				tojson.put("refresh_token", authorization.getRefreshToken());
+			} catch (Exception e) {
+				if (httpErrorHandler != null
+						&& httpErrorHandler.handle(
+								ServletActionContext.getRequest(),
+								ServletActionContext.getResponse(),
+								HttpServletResponse.SC_BAD_REQUEST,
+								e.getMessage()))
+					return NONE;
+				try {
+					ServletActionContext.getResponse().sendError(
+							HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+					return NONE;
+				} catch (IOException e1) {
+					e1.printStackTrace();
+				}
+				return NONE;
+			}
+			return JSON;
+		} else {
+			if (!"authorization_code".equals(grant_type)) {
+				String message = "grant_type must be authorization_code";
+				if (httpErrorHandler != null
+						&& httpErrorHandler.handle(
+								ServletActionContext.getRequest(),
+								ServletActionContext.getResponse(),
+								HttpServletResponse.SC_BAD_REQUEST, message))
+					return NONE;
+				try {
+					ServletActionContext.getResponse().sendError(
+							HttpServletResponse.SC_BAD_REQUEST, message);
+				} catch (IOException e1) {
+					e1.printStackTrace();
+				}
+				return NONE;
+			}
+			client = new Client();
+			client.setId(client_id);
+			client.setSecret(client_secret);
+			client.setRedirectUri(redirect_uri);
+			try {
+				authorization = oauthManager.authenticate(code, client);
+				tojson = new HashMap<String, Object>();
+				tojson.put("access_token", authorization.getAccessToken());
+				tojson.put("expires_in", authorization.getExpiresIn());
+				tojson.put("refresh_token", authorization.getRefreshToken());
+			} catch (Exception e) {
+				if (httpErrorHandler != null
+						&& httpErrorHandler.handle(
+								ServletActionContext.getRequest(),
+								ServletActionContext.getResponse(),
+								HttpServletResponse.SC_BAD_REQUEST,
+								e.getMessage()))
+					return NONE;
+				try {
+					ServletActionContext.getResponse().sendError(
+							HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+				} catch (IOException e1) {
+					e1.printStackTrace();
+				}
+				return NONE;
+			}
+			return JSON;
 		}
-		return JSON;
 	}
 
 	@JsonConfig(root = "tojson")
-	public String tokeninfo() {
+	public String info() {
+		if (access_token == null && token != null)
+			access_token = token;
 		tojson = new HashMap<String, Object>();
 		authorization = oauthManager.retrieve(access_token);
 		if (authorization == null) {
+			if (httpErrorHandler != null
+					&& httpErrorHandler.handle(
+							ServletActionContext.getRequest(),
+							ServletActionContext.getResponse(),
+							HttpServletResponse.SC_UNAUTHORIZED,
+							"invalid_token"))
+				return NONE;
 			tojson.put("error", "invalid_token");
 		} else {
-			tojson.put("client_id", authorization.getClient().getId());
-			tojson.put("username", authorization.getGrantor().getUsername());
+			if (authorization.getClient() != null)
+				tojson.put("client_id", authorization.getClient().getId());
+			if (authorization.getGrantor() != null)
+				tojson.put("username", authorization.getGrantor().getUsername());
 			tojson.put("expires_in", authorization.getExpiresIn());
-			tojson.put("scope", authorization.getScope());
+			if (authorization.getScope() != null)
+				tojson.put("scope", authorization.getScope());
 		}
 		return JSON;
 	}
 
-	public String revoketoken() {
+	public String revoke() {
+		if (access_token == null && token != null)
+			access_token = token;
 		oauthManager.revoke(access_token);
 		return NONE;
 	}

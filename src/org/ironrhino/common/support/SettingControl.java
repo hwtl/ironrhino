@@ -34,7 +34,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class SettingControl implements
-		ApplicationListener<EntityOperationEvent> {
+		ApplicationListener<EntityOperationEvent<Setting>> {
 
 	protected Logger logger = LoggerFactory.getLogger(getClass());
 
@@ -58,31 +58,49 @@ public class SettingControl implements
 	}
 
 	public void setValue(String key, String value) {
-		Setting s = settings.get(key);
-		if (s != null)
+		entityManager.setEntityClass(Setting.class);
+		Setting s = entityManager.findByNaturalId(key);
+		if (s != null) {
+			if (value == null) {
+				entityManager.delete(s);
+				return;
+			}
 			s.setValue(value);
-		else
+		} else {
 			s = new Setting(key, value);
+		}
 		entityManager.save(s);
 	}
 
 	public void setValue(String key, String value, boolean readonly) {
-		Setting s = settings.get(key);
-		if (s != null)
+		entityManager.setEntityClass(Setting.class);
+		Setting s = entityManager.findByNaturalId(key);
+		if (s != null) {
+			if (value == null) {
+				entityManager.delete(s);
+				return;
+			}
 			s.setValue(value);
-		else
+		} else {
 			s = new Setting(key, value);
+		}
 		s.setReadonly(readonly);
 		entityManager.save(s);
 	}
 
 	public void setValue(String key, String value, boolean readonly,
 			boolean hidden) {
-		Setting s = settings.get(key);
-		if (s != null)
+		entityManager.setEntityClass(Setting.class);
+		Setting s = entityManager.findByNaturalId(key);
+		if (s != null) {
+			if (value == null) {
+				entityManager.delete(s);
+				return;
+			}
 			s.setValue(value);
-		else
+		} else {
 			s = new Setting(key, value);
+		}
 		s.setReadonly(readonly);
 		s.setHidden(hidden);
 		entityManager.save(s);
@@ -147,7 +165,7 @@ public class SettingControl implements
 	}
 
 	@Override
-	public void onApplicationEvent(EntityOperationEvent event) {
+	public void onApplicationEvent(EntityOperationEvent<Setting> event) {
 		if (event.getEntity() instanceof Setting) {
 			Setting settingInEvent = (Setting) event.getEntity();
 			if (event.getType() == EntityOperationType.CREATE) {

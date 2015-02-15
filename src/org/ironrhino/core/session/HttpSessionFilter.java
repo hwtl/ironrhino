@@ -3,30 +3,22 @@ package org.ironrhino.core.session;
 import java.io.IOException;
 import java.util.List;
 
-import javax.servlet.Filter;
+import javax.servlet.AsyncEvent;
+import javax.servlet.AsyncListener;
 import javax.servlet.FilterChain;
-import javax.servlet.FilterConfig;
 import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
-public class HttpSessionFilter implements Filter {
+public class HttpSessionFilter extends OncePerRequestFilter {
 
-	private static final String APPLIED_KEY = "APPLIED."
-			+ HttpSessionFilter.class.getName();
-
-	public static final String KEY_EXCLUDE_PATTERNS = "excludePatterns";
-
-	public static final String DEFAULT_EXCLUDE_PATTERNS = "/assets/*,/remoting/*";
-
+	@Autowired
 	private ServletContext servletContext;
 
 	@Autowired
@@ -35,42 +27,15 @@ public class HttpSessionFilter implements Filter {
 	@Autowired(required = false)
 	private List<HttpSessionFilterHook> httpSessionFilterHooks;
 
-	private String[] excludePatterns;
-
 	@Override
-	public void init(FilterConfig filterConfig) {
-		servletContext = filterConfig.getServletContext();
-		String str = filterConfig.getInitParameter(KEY_EXCLUDE_PATTERNS);
-		if (StringUtils.isBlank(str))
-			str = DEFAULT_EXCLUDE_PATTERNS;
-		excludePatterns = str.split("\\s*,\\s*");
-	}
-
-	@Override
-	public void doFilter(ServletRequest request, ServletResponse response,
-			FilterChain chain) throws IOException, ServletException {
-		HttpServletRequest req = (HttpServletRequest) request;
-		if (req.getAttribute(APPLIED_KEY) != null) {
-			chain.doFilter(request, response);
-			return;
-		}
-		request.setAttribute(APPLIED_KEY, true);
-
-		for (String pattern : excludePatterns) {
-			String path = req.getRequestURI();
-			path = path.substring(req.getContextPath().length());
-			if (org.ironrhino.core.util.StringUtils.matchesWildcard(path,
-					pattern)) {
-				chain.doFilter(request, response);
-				return;
-			}
-		}
-		WrappedHttpSession session = new WrappedHttpSession(
-				(HttpServletRequest) request, (HttpServletResponse) response,
-				servletContext, httpSessionManager);
+	protected void doFilterInternal(HttpServletRequest request,
+			HttpServletResponse response, FilterChain chain)
+			throws ServletException, IOException {
+		final WrappedHttpSession session = new WrappedHttpSession(request,
+				response, servletContext, httpSessionManager);
 		WrappedHttpServletRequest wrappedHttpRequest = new WrappedHttpServletRequest(
-				req, session);
-		WrappedHttpServletResponse wrappedHttpResponse = new WrappedHttpServletResponse(
+				request, session);
+		final WrappedHttpServletResponse wrappedHttpResponse = new WrappedHttpServletResponse(
 				(HttpServletResponse) response, session);
 		if (httpSessionFilterHooks != null)
 			try {
@@ -86,17 +51,46 @@ public class HttpSessionFilter implements Filter {
 			}
 		else
 			chain.doFilter(wrappedHttpRequest, wrappedHttpResponse);
-		try {
-			session.save();
-		} catch (Exception e) {
-			e.printStackTrace();
-		} finally {
-			wrappedHttpResponse.commit();
-		}
-	}
+		if (!wrappedHttpRequest.isAsyncStarted()) {
+			try {
+				session.save();
+			} catch (Exception e) {
+				e.printStackTrace();
+			} finally {
+				wrappedHttpResponse.commit();
+			}
+		} else {
+			wrappedHttpRequest.getAsyncContext().addListener(
+					new AsyncListener() {
 
-	@Override
-	public void destroy() {
+						@Override
+						public void onStartAsync(AsyncEvent event)
+								throws IOException {
+						}
+
+						@Override
+						public void onTimeout(AsyncEvent event)
+								throws IOException {
+						}
+
+						@Override
+						public void onError(AsyncEvent event)
+								throws IOException {
+						}
+
+						@Override
+						public void onComplete(AsyncEvent event)
+								throws IOException {
+							try {
+								session.save();
+							} catch (Exception e) {
+								e.printStackTrace();
+							} finally {
+								wrappedHttpResponse.commit();
+							}
+						}
+					});
+		}
 
 	}
 }

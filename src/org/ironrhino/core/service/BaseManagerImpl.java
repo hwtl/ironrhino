@@ -20,6 +20,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.hibernate.CacheMode;
 import org.hibernate.Criteria;
 import org.hibernate.FlushMode;
+import org.hibernate.LockOptions;
 import org.hibernate.ObjectNotFoundException;
 import org.hibernate.Query;
 import org.hibernate.ScrollMode;
@@ -28,6 +29,7 @@ import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
 import org.hibernate.annotations.GenericGenerator;
+import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.NaturalId;
 import org.hibernate.criterion.CriteriaSpecification;
 import org.hibernate.criterion.DetachedCriteria;
@@ -36,6 +38,7 @@ import org.hibernate.criterion.Projections;
 import org.hibernate.criterion.Restrictions;
 import org.hibernate.internal.CriteriaImpl;
 import org.hibernate.internal.CriteriaImpl.OrderEntry;
+import org.ironrhino.core.metadata.AppendOnly;
 import org.ironrhino.core.model.BaseTreeableEntity;
 import org.ironrhino.core.model.Ordered;
 import org.ironrhino.core.model.Persistable;
@@ -85,6 +88,11 @@ public abstract class BaseManagerImpl<T extends Persistable<?>> implements
 	@Override
 	@Transactional
 	public void save(T obj) {
+		Immutable immutable = obj.getClass().getAnnotation(Immutable.class);
+		if (immutable != null)
+			throw new IllegalArgumentException(obj.getClass() + " is @"
+					+ Immutable.class.getSimpleName());
+		AppendOnly appendOnly = obj.getClass().getAnnotation(AppendOnly.class);
 		boolean isnew = obj.isNew();
 		GenericGenerator genericGenerator = AnnotationUtils
 				.getAnnotatedPropertyNameAndAnnotations(obj.getClass(),
@@ -95,9 +103,17 @@ public abstract class BaseManagerImpl<T extends Persistable<?>> implements
 			Serializable id = obj.getId();
 			if (id == null)
 				throw new IllegalArgumentException(obj + " must have an ID");
-			DetachedCriteria dc = detachedCriteria();
-			dc.add(Restrictions.eq("id", id));
-			isnew = countByCriteria(dc) == 0;
+			if (appendOnly == null) {
+				DetachedCriteria dc = detachedCriteria();
+				dc.add(Restrictions.eq("id", id));
+				isnew = countByCriteria(dc) == 0;
+			} else {
+				isnew = true;
+			}
+		} else {
+			if (appendOnly != null && !isnew)
+				throw new IllegalArgumentException(obj.getClass() + " is @"
+						+ AppendOnly.class.getSimpleName());
 		}
 		ReflectionUtils.processCallback(obj, isnew ? PrePersist.class
 				: PreUpdate.class);
@@ -146,13 +162,10 @@ public abstract class BaseManagerImpl<T extends Persistable<?>> implements
 			}
 			return;
 		}
-		if (idAssigned)
-			if (isnew)
-				session.save(obj);
-			else
-				session.update(obj);
+		if (isnew)
+			session.save(obj);
 		else
-			session.saveOrUpdate(obj);
+			session.update(obj);
 		ReflectionUtils.processCallback(obj, isnew ? PostPersist.class
 				: PostUpdate.class);
 	}
@@ -160,6 +173,14 @@ public abstract class BaseManagerImpl<T extends Persistable<?>> implements
 	@Override
 	@Transactional
 	public void update(T obj) {
+		Immutable immutable = obj.getClass().getAnnotation(Immutable.class);
+		if (immutable != null)
+			throw new IllegalArgumentException(obj.getClass() + " is @"
+					+ Immutable.class.getSimpleName());
+		AppendOnly appendOnly = obj.getClass().getAnnotation(AppendOnly.class);
+		if (appendOnly != null)
+			throw new IllegalArgumentException(obj.getClass() + " is @"
+					+ AppendOnly.class.getSimpleName());
 		if (obj.isNew())
 			throw new IllegalArgumentException(obj
 					+ " must be persisted before update");
@@ -171,6 +192,14 @@ public abstract class BaseManagerImpl<T extends Persistable<?>> implements
 	@Override
 	@Transactional
 	public void delete(T obj) {
+		Immutable immutable = obj.getClass().getAnnotation(Immutable.class);
+		if (immutable != null)
+			throw new IllegalArgumentException(obj.getClass() + " is @"
+					+ Immutable.class.getSimpleName());
+		AppendOnly appendOnly = obj.getClass().getAnnotation(AppendOnly.class);
+		if (appendOnly != null)
+			throw new IllegalArgumentException(obj.getClass() + " is @"
+					+ AppendOnly.class.getSimpleName());
 		checkDelete(obj);
 		ReflectionUtils.processCallback(obj, PreRemove.class);
 		sessionFactory.getCurrentSession().delete(obj);
@@ -178,12 +207,29 @@ public abstract class BaseManagerImpl<T extends Persistable<?>> implements
 	}
 
 	protected void checkDelete(T obj) {
+		Immutable immutable = obj.getClass().getAnnotation(Immutable.class);
+		if (immutable != null)
+			throw new IllegalArgumentException(obj.getClass() + " is @"
+					+ Immutable.class.getSimpleName());
+		AppendOnly appendOnly = obj.getClass().getAnnotation(AppendOnly.class);
+		if (appendOnly != null)
+			throw new IllegalArgumentException(obj.getClass() + " is @"
+					+ AppendOnly.class.getSimpleName());
 		deleteChecker.check(obj);
 	}
 
 	@Override
 	@Transactional
 	public List<T> delete(Serializable... id) {
+		Immutable immutable = getEntityClass().getAnnotation(Immutable.class);
+		if (immutable != null)
+			throw new IllegalArgumentException(getEntityClass() + " is @"
+					+ Immutable.class.getSimpleName());
+		AppendOnly appendOnly = getEntityClass()
+				.getAnnotation(AppendOnly.class);
+		if (appendOnly != null)
+			throw new IllegalArgumentException(getEntityClass() + " is @"
+					+ AppendOnly.class.getSimpleName());
 		if (id == null || id.length == 0 || id.length == 1 && id[0] == null)
 			return null;
 		if (id.length == 1 && id[0].getClass().isArray()) {
@@ -236,6 +282,15 @@ public abstract class BaseManagerImpl<T extends Persistable<?>> implements
 		if (id == null)
 			return null;
 		return (T) sessionFactory.getCurrentSession().get(getEntityClass(), id);
+	}
+
+	@Override
+	@Transactional
+	public T get(Serializable id, LockOptions lockOptions) {
+		if (id == null)
+			return null;
+		return (T) sessionFactory.getCurrentSession().get(getEntityClass(), id,
+				lockOptions);
 	}
 
 	@Override
@@ -442,6 +497,11 @@ public abstract class BaseManagerImpl<T extends Persistable<?>> implements
 		if (objects == null || objects.length == 0 || objects.length == 1
 				&& objects[0] == null)
 			return null;
+		for (Serializable ser : objects) {
+			if (ser == null || ser instanceof Persistable
+					&& ((Persistable) ser).isNew())
+				return null;
+		}
 		if (objects.length == 1 && objects[0].getClass().isArray()) {
 			Object[] objs = (Object[]) objects[0];
 			Serializable[] arr = new Serializable[objs.length];
@@ -478,6 +538,10 @@ public abstract class BaseManagerImpl<T extends Persistable<?>> implements
 	public T findOne(boolean caseInsensitive, Serializable... objects) {
 		if (!caseInsensitive)
 			return findOne(objects);
+		for (Serializable ser : objects)
+			if (ser == null || ser instanceof Persistable
+					&& ((Persistable) ser).isNew())
+				return null;
 		String hql = "select entity from " + getEntityClass().getName()
 				+ " entity where ";
 		if (objects.length == 1) {
@@ -625,6 +689,12 @@ public abstract class BaseManagerImpl<T extends Persistable<?>> implements
 	@Override
 	public void iterate(int fetchSize, IterateCallback callback,
 			DetachedCriteria dc) {
+		iterate(fetchSize, callback, dc, false);
+	}
+
+	@Override
+	public void iterate(int fetchSize, IterateCallback callback,
+			DetachedCriteria dc, boolean commitPerFetch) {
 		Session hibernateSession = sessionFactory.openSession();
 		Criteria c;
 		if (dc != null) {
@@ -663,6 +733,11 @@ public abstract class BaseManagerImpl<T extends Persistable<?>> implements
 					buffer.put(prev);
 					buffer.flush();
 					prev = null;
+					if (commitPerFetch) {
+						hibernateTransaction.commit();
+						hibernateTransaction = hibernateSession
+								.beginTransaction();
+					}
 				}
 			}
 			if (prev != null) {
@@ -687,26 +762,24 @@ public abstract class BaseManagerImpl<T extends Persistable<?>> implements
 
 	private static class RowBuffer {
 		private Object[] buffer;
-		private int fetchCount;
-		private int index = 0;
+		private int currentIndex;
 		private Session hibernateSession;
 		private IterateCallback callback;
 
-		RowBuffer(Session hibernateSession, int fetchCount,
+		RowBuffer(Session hibernateSession, int fetchSize,
 				IterateCallback callback) {
 			this.hibernateSession = hibernateSession;
-			this.fetchCount = fetchCount;
+			this.buffer = new Object[fetchSize];
 			this.callback = callback;
-			this.buffer = new Object[fetchCount + 1];
 		}
 
 		public void put(Object row) {
-			buffer[index] = row;
-			index++;
+			buffer[currentIndex] = row;
+			currentIndex++;
 		}
 
 		public boolean shouldFlush() {
-			return index >= fetchCount;
+			return currentIndex >= buffer.length - 1;
 		}
 
 		public int close() {
@@ -716,16 +789,15 @@ public abstract class BaseManagerImpl<T extends Persistable<?>> implements
 		}
 
 		private int flush() {
-			Object[] arr = new Object[index];
-			for (int i = 0; i < index; i++) {
-				arr[i] = buffer[i];
-			}
-			callback.process(arr, hibernateSession);
+			if (currentIndex == 0)
+				return -1;
+			callback.process(Arrays.copyOfRange(buffer, 0, currentIndex),
+					hibernateSession);
 			Arrays.fill(buffer, null);
 			hibernateSession.flush();
 			hibernateSession.clear();
-			int result = index;
-			index = 0;
+			int result = currentIndex;
+			currentIndex = 0;
 			return result;
 		}
 	}

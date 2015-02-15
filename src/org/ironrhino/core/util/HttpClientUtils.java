@@ -75,8 +75,8 @@ public class HttpClientUtils {
 		else {
 			PoolingHttpClientConnectionManager cm = new PoolingHttpClientConnectionManager(
 					60, TimeUnit.SECONDS);
-			cm.setDefaultMaxPerRoute(5);
-			cm.setMaxTotal(100);
+			cm.setDefaultMaxPerRoute(1000);
+			cm.setMaxTotal(1000);
 			connManager = cm;
 		}
 		RequestConfig requestConfig = RequestConfig.custom()
@@ -86,8 +86,10 @@ public class HttpClientUtils {
 		CloseableHttpClient httpclient = HttpClientBuilder.create()
 				.setConnectionManager(connManager)
 				.setKeepAliveStrategy(new DefaultConnectionKeepAliveStrategy())
-				.setDefaultRequestConfig(requestConfig)
-				.setDefaultHeaders(DEFAULT_HEADERS).build();
+				.setDefaultRequestConfig(requestConfig).disableAuthCaching()
+				.disableAutomaticRetries().disableConnectionState()
+				.disableCookieManagement().setDefaultHeaders(DEFAULT_HEADERS)
+				.build();
 		return httpclient;
 	}
 
@@ -129,8 +131,12 @@ public class HttpClientUtils {
 		if (headers != null && headers.size() > 0)
 			for (Map.Entry<String, String> entry : headers.entrySet())
 				httpRequest.addHeader(entry.getKey(), entry.getValue());
-		return getDefaultInstance().execute(httpRequest,
-				new BasicResponseHandler(charset));
+		try {
+			return getDefaultInstance().execute(httpRequest,
+					new BasicResponseHandler(charset));
+		} finally {
+			httpRequest.releaseConnection();
+		}
 	}
 
 	public static String postResponseText(String url, Map<String, String> params)
@@ -163,8 +169,12 @@ public class HttpClientUtils {
 		if (headers != null && headers.size() > 0)
 			for (Map.Entry<String, String> entry : headers.entrySet())
 				httpRequest.addHeader(entry.getKey(), entry.getValue());
-		return getDefaultInstance().execute(httpRequest,
-				new BasicResponseHandler(charset));
+		try {
+			return getDefaultInstance().execute(httpRequest,
+					new BasicResponseHandler(charset));
+		} finally {
+			httpRequest.releaseConnection();
+		}
 	}
 
 	public static String postResponseText(String url, String body,
@@ -174,8 +184,12 @@ public class HttpClientUtils {
 		if (headers != null && headers.size() > 0)
 			for (Map.Entry<String, String> entry : headers.entrySet())
 				httpRequest.addHeader(entry.getKey(), entry.getValue());
-		return getDefaultInstance().execute(httpRequest,
-				new BasicResponseHandler(charset));
+		try {
+			return getDefaultInstance().execute(httpRequest,
+					new BasicResponseHandler(charset));
+		} finally {
+			httpRequest.releaseConnection();
+		}
 	}
 
 	public static String post(String url, String entity) throws IOException {
@@ -223,8 +237,13 @@ public class HttpClientUtils {
 		if (entity != null)
 			((HttpEntityEnclosingRequestBase) httpRequest)
 					.setEntity(new StringEntity(entity, charset));
-		return getDefaultInstance().execute(httpRequest,
-				new BasicResponseHandler(charset));
+		try {
+			return getDefaultInstance().execute(httpRequest,
+					new BasicResponseHandler(charset));
+		} finally {
+			if (httpRequest != null)
+				httpRequest.releaseConnection();
+		}
 	}
 
 	static class BasicResponseHandler implements ResponseHandler<String> {

@@ -6,13 +6,13 @@
 <body>
 <#assign columns={"name":{"cellEdit":"click"},"areacode":{"cellEdit":"click","width":"100px"},"postcode":{"cellEdit":"click","width":"100px"},"rank":{"cellEdit":"click","width":"100px"},"displayOrder":{"cellEdit":"click","width":"100px"}}>
 <#assign actionColumnButtons=r'
-<button type="button" class="btn" data-view="input">${action.getText("edit")}</button>
+<@btn view="input" label="edit"/>
 <a class="btn ajax view" href="${actionBaseUrl+"?parent="+entity.id}">${action.getText("enter")}</a>
 '>
 <#assign bottomButtons='
-<button type="button" class="btn" data-view="input">${action.getText("create")}</button>
-<button type="button" class="btn confirm" data-action="save">${action.getText("save")}</button>
-<button type="button" class="btn confirm" data-action="delete" data-shown="selected">${action.getText("delete")}</button>
+<@btn view="input" label="create"/>
+<@btn action="save" confirm=true/>
+<@btn action="delete" confirm=true/>
 '+r'
 <#if region?? && parent??>
 <#if region.parent??>
@@ -42,7 +42,7 @@
 </ul>
 </#if>
 <@richtable entityName="region" columns=columns actionColumnButtons=actionColumnButtons bottomButtons=bottomButtons/>
-<form id="move" action="region/move" method="post" class="ajax reset" style="display:none;" onprepare="return confirm('${action.getText('confirm')}?');" onsuccess="$('#region_form').submit()">
+<form id="move" action="${actionBaseUrl}/move" method="post" class="ajax reset" style="display:none;" onprepare="return confirm('${action.getText('confirm')}?');" onsuccess="$('#region_form').submit()">
 	<div style="padding-top:10px;text-align:center;">
 	<input id="regionId1" type="hidden" name="id"/>
 	<span class="treeselect" data-options="{'url':'<@url value="/region/children"/>','name':'this','id':'#regionId1','cache':false}"></span>
@@ -52,7 +52,7 @@
 	<@s.submit theme="simple" value="%{getText('confirm')}" />
 	</div>
 </form>
-<form id="merge" action="region/merge" method="post" class="ajax reset" style="display:none;" onprepare="return confirm('${action.getText('confirm')}?');" onsuccess="$('#region_form').submit()">
+<form id="merge" action="${actionBaseUrl}/merge" method="post" class="ajax reset" style="display:none;" onprepare="return confirm('${action.getText('confirm')}?');" onsuccess="$('#region_form').submit()">
 	<div style="padding-top:10px;text-align:center;">
 	<input id="regionId3" type="hidden" name="id"/>
 	<span class="treeselect" data-options="{'url':'<@url value="/region/children"/>','name':'this','id':'#regionId3','cache':false}"></span>

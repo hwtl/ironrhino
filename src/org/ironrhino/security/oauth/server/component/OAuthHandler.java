@@ -16,6 +16,8 @@ import org.ironrhino.core.util.UserAgent;
 import org.ironrhino.security.oauth.server.model.Authorization;
 import org.ironrhino.security.oauth.server.model.Client;
 import org.ironrhino.security.oauth.server.service.OAuthManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
@@ -37,6 +39,8 @@ public class OAuthHandler extends AccessHandler {
 	public static final String REQUEST_ATTRIBUTE_KEY_OAUTH_REQUEST = "_OAUTH_REQUEST";
 	public static final String REQUEST_ATTRIBUTE_KEY_OAUTH_CLIENT = "_OAUTH_CLIENT";
 	public static final String SESSION_ID_PREFIX = "tk_";
+
+	private Logger logger = LoggerFactory.getLogger(getClass());
 
 	@Value("${oauth.api.pattern:/user/self,/oauth2/tokeninfo,/oauth2/revoketoken,/api/*}")
 	private String apiPattern;
@@ -97,80 +101,87 @@ public class OAuthHandler extends AccessHandler {
 		if (StringUtils.isNotBlank(token)) {
 			Authorization authorization = oauthManager.retrieve(token);
 			if (authorization != null) {
-				String[] scopes = null;
-				if (StringUtils.isNotBlank(authorization.getScope()))
-					scopes = authorization.getScope().split("\\s");
-				boolean authorized = (scopes == null);
-				if (!authorized && scopes != null) {
-					for (String s : scopes) {
-						String requestURL = request.getRequestURL().toString();
-						if (requestURL.startsWith(s)) {
-							authorized = true;
-							break;
+				if (authorization.getExpiresIn() > 0) {
+					String[] scopes = null;
+					if (StringUtils.isNotBlank(authorization.getScope()))
+						scopes = authorization.getScope().split("\\s");
+					boolean authorized = (scopes == null);
+					if (!authorized && scopes != null) {
+						for (String s : scopes) {
+							String requestURL = request.getRequestURL()
+									.toString();
+							if (requestURL.startsWith(s)) {
+								authorized = true;
+								break;
+							}
 						}
 					}
-				}
-				if (authorized) {
-					if (!(authorization.getClient() != null && !authorization
-							.getClient().isEnabled())) {
-						UserDetails ud = null;
-						if (authorization.getGrantor() != null) {
-							try {
-								ud = userDetailsService
-										.loadUserByUsername(authorization
-												.getGrantor().getUsername());
-							} catch (UsernameNotFoundException unf) {
-								unf.printStackTrace();
-							}
+					if (authorized) {
+						Client client = oauthManager
+								.findClientById(authorization.getClient());
+						if (client == null || client.isEnabled()) {
+							UserDetails ud = null;
+							if (authorization.getGrantor() != null) {
+								try {
+									ud = userDetailsService
+											.loadUserByUsername(authorization
+													.getGrantor());
+								} catch (UsernameNotFoundException unf) {
+									logger.error(unf.getMessage(), unf);
+								}
 
-						} else if (authorization.getClient() != null) {
-							try {
-								ud = userDetailsService
-										.loadUserByUsername(authorization
-												.getClient().getOwner()
-												.getUsername());
-							} catch (UsernameNotFoundException unf) {
-								unf.printStackTrace();
+							} else if (client != null) {
+								try {
+									ud = userDetailsService
+											.loadUserByUsername(client
+													.getOwner().getUsername());
+								} catch (UsernameNotFoundException unf) {
+									logger.error(unf.getMessage(), unf);
+								}
 							}
+							if (ud != null && ud.isEnabled()
+									&& ud.isAccountNonExpired()
+									&& ud.isAccountNonLocked()) {
+								SecurityContext sc = SecurityContextHolder
+										.getContext();
+								Authentication auth = new UsernamePasswordAuthenticationToken(
+										ud, ud.getPassword(),
+										ud.getAuthorities());
+								sc.setAuthentication(auth);
+								Map<String, Object> sessionMap = new HashMap<String, Object>(
+										2, 1);
+								sessionMap
+										.put(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
+												sc);
+								request.setAttribute(
+										HttpSessionManager.REQUEST_ATTRIBUTE_KEY_SESSION_MAP_FOR_API,
+										sessionMap);
+								request.setAttribute(
+										REQUEST_ATTRIBUTE_KEY_OAUTH_REQUEST,
+										true);
+								request.setAttribute(
+										HttpSessionManager.REQUEST_ATTRIBUTE_KEY_SESSION_ID_FOR_API,
+										SESSION_ID_PREFIX + token);
+							}
+							if (client != null) {
+								request.setAttribute(
+										REQUEST_ATTRIBUTE_KEY_OAUTH_CLIENT,
+										client);
+								UserAgent ua = new UserAgent(
+										request.getHeader("User-Agent"));
+								ua.setAppId(client.getId());
+								ua.setAppName(client.getName());
+								request.setAttribute("userAgent", ua);
+							}
+							return false;
+						} else {
+							errorMessage = "client_disabled";
 						}
-						if (ud != null && ud.isEnabled()
-								&& ud.isAccountNonExpired()
-								&& ud.isAccountNonLocked()) {
-							SecurityContext sc = SecurityContextHolder
-									.getContext();
-							Authentication auth = new UsernamePasswordAuthenticationToken(
-									ud, ud.getPassword(), ud.getAuthorities());
-							sc.setAuthentication(auth);
-							Map<String, Object> sessionMap = new HashMap<String, Object>(
-									2, 1);
-							sessionMap
-									.put(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
-											sc);
-							request.setAttribute(
-									HttpSessionManager.REQUEST_ATTRIBUTE_KEY_SESSION_MAP_FOR_API,
-									sessionMap);
-							request.setAttribute(
-									REQUEST_ATTRIBUTE_KEY_OAUTH_REQUEST, true);
-							request.setAttribute(
-									HttpSessionManager.REQUEST_ATTRIBUTE_KEY_SESSION_ID_FOR_API,
-									SESSION_ID_PREFIX + token);
-						}
-						Client client = authorization.getClient();
-						if (client != null) {
-							request.setAttribute(
-									REQUEST_ATTRIBUTE_KEY_OAUTH_CLIENT, client);
-							UserAgent ua = new UserAgent(
-									request.getHeader("User-Agent"));
-							ua.setAppId(client.getId());
-							ua.setAppName(client.getName());
-							request.setAttribute("userAgent", ua);
-						}
-						return false;
 					} else {
-						errorMessage = "client_disabled";
+						errorMessage = "unauthorized_scope";
 					}
 				} else {
-					errorMessage = "unauthorized_scope";
+					errorMessage = "expired_token";
 				}
 			} else {
 				errorMessage = "invalid_token";
@@ -185,11 +196,11 @@ public class OAuthHandler extends AccessHandler {
 		try {
 			if (errorMessage != null)
 				response.getWriter().write(errorMessage);
-			response.sendError(HttpServletResponse.SC_FORBIDDEN, errorMessage);
+			response.sendError(HttpServletResponse.SC_UNAUTHORIZED,
+					errorMessage);
 		} catch (IOException e) {
-			e.printStackTrace();
+			logger.error(e.getMessage(), e);
 		}
 		return true;
 	}
-
 }

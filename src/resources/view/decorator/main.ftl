@@ -25,7 +25,7 @@
 </#if>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="shortcut icon" href="<@url value="/assets/images/favicon.ico"/>" />
-<link href="<@url value="/assets/styles/ironrhino.css"/>" media="all" rel="stylesheet" type="text/css" />
+<link href="<@url value="/assets/styles/ironrhino${modernBrowser?string('-min','-ie')}.css"/>" media="all" rel="stylesheet" type="text/css" />
 <script src="<@url value="/assets/scripts/ironrhino${modernBrowser?string('-min','-ie')}.js"/>" type="text/javascript"<#if modernBrowser&&!head?contains('</script>')> defer</#if>></script>
 <#include "include/assets.ftl"/>
 <#noescape>${head}</#noescape>
@@ -43,6 +43,7 @@ ${action.getText('browser.warning')}
 </div>
 </#if>
 <#include "include/top.ftl"/>
+<#if 'welcome'!=page.properties["meta.body_class"]!>
 <@authorize ifAnyGranted="ROLE_BUILTIN_USER">
 <div class="navbar navbar-fixed-top">
   <div class="navbar-inner">
@@ -59,7 +60,7 @@ ${action.getText('browser.warning')}
 	          <i class="glyphicon glyphicon-user"></i> ${user?string} <span class="caret"></span>
 	        </a>
 	        <ul class="dropdown-menu">
-	          <li><a href="<@url value="${ssoServerBase!}/user/profile"/>" class="popmodal">${action.getText('profile')}</a></li>
+	          <li><a href="<@url value="${ssoServerBase!}/user/profile"/>" class="popmodal nocache">${action.getText('profile')}</a></li>
 	          <#if !user.getAttribute('oauth_provider')??>
 	          <li><a href="<@url value="${ssoServerBase!}/user/password"/>" class="popmodal">${action.getText('change')}${action.getText('password')}</a></li>
 	          </#if>
@@ -76,6 +77,7 @@ ${action.getText('browser.warning')}
   </div>
 </div>
 </@authorize>
+</#if>
 <div id="content" class="container">
 <#if action.hasActionMessages() || action.hasActionErrors()>
 <div id="message">

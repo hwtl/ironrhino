@@ -15,7 +15,7 @@
 	<target name="compressScripts">
 		<concat destfile="${webapp.dir}/assets/scripts/ironrhino.js" encoding="utf-8" fixlastline="yes">
 			<filelist>
-				<file name="${webapp.dir}/assets/scripts/source/jquery-2.1.1.js" />
+				<file name="${webapp.dir}/assets/scripts/source/jquery-2.1.3.js" />
 				<file name="${webapp.dir}/assets/scripts/source/jquery.browser-1.0.0.js" />
 				<file name="${webapp.dir}/assets/scripts/source/jquery.cookie-1.0.js" />
 				<file name="${webapp.dir}/assets/scripts/source/jquery.ui-1.11.0.js" />
@@ -56,6 +56,7 @@
 				<file name="${webapp.dir}/assets/scripts/source/ironrhino.portal.js" />
 				<file name="${webapp.dir}/assets/scripts/source/ironrhino.combobox.js" />
 				<file name="${webapp.dir}/assets/scripts/source/ironrhino.tags.js" />
+				<file name="${webapp.dir}/assets/scripts/source/ironrhino.suggestion.js" />
 				<file name="${webapp.dir}/assets/scripts/source/ironrhino.resizabletable.js" />
 				<file name="${webapp.dir}/assets/scripts/source/ironrhino.pagination.js" />
 				<file name="${webapp.dir}/assets/scripts/source/ironrhino.richtable.js" />
@@ -75,7 +76,7 @@
 		</concat>
 		<concat destfile="${webapp.dir}/assets/scripts/ironrhino-ie.js" encoding="utf-8" fixlastline="yes">
 			<filelist>
-				<file name="${webapp.dir}/assets/scripts/source/jquery-1.11.1.js" />
+				<file name="${webapp.dir}/assets/scripts/source/jquery-1.11.2.js" />
 				<file name="${webapp.dir}/assets/scripts/source/jquery.browser-1.0.0.js" />
 				<file name="${webapp.dir}/assets/scripts/source/jquery.cookie-1.0.js" />
 				<file name="${webapp.dir}/assets/scripts/source/jquery.ui-1.11.0.js" />
@@ -116,6 +117,7 @@
 				<file name="${webapp.dir}/assets/scripts/source/ironrhino.portal.js" />
 				<file name="${webapp.dir}/assets/scripts/source/ironrhino.combobox.js" />
 				<file name="${webapp.dir}/assets/scripts/source/ironrhino.tags.js" />
+				<file name="${webapp.dir}/assets/scripts/source/ironrhino.suggestion.js" />
 				<file name="${webapp.dir}/assets/scripts/source/ironrhino.resizabletable.js" />
 				<file name="${webapp.dir}/assets/scripts/source/ironrhino.pagination.js" />
 				<file name="${webapp.dir}/assets/scripts/source/ironrhino.richtable.js" />
@@ -154,10 +156,12 @@
 			</filelist>
 		</concat>
 		<replace file="${webapp.dir}/assets/scripts/ironrhino.js" token="@license" value="license" encoding="utf-8" />
+		<replace file="${webapp.dir}/assets/scripts/ironrhino.js" token="@copyright" value="copyright" encoding="utf-8" />
 		<java jar="${lib.dir}/closure-compiler.jar" fork="true">
 			<arg line=" --js=./webapp/assets/scripts/ironrhino.js --js_output_file=./webapp/assets/scripts/ironrhino-min.js" />
 		</java>
 		<replace file="${webapp.dir}/assets/scripts/ironrhino-lite.js" token="@license" value="license" encoding="utf-8" />
+		<replace file="${webapp.dir}/assets/scripts/ironrhino-lite.js" token="@copyright" value="copyright" encoding="utf-8" />
 		<java jar="${lib.dir}/closure-compiler.jar" fork="true">
 			<arg line=" --js=./webapp/assets/scripts/ironrhino-lite.js --js_output_file=./webapp/assets/scripts/ironrhino-lite-min.js" />
 		</java>

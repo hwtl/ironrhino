@@ -8,6 +8,7 @@ import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
 import javax.servlet.ServletRegistration;
 
+import org.ironrhino.core.servlet.DelegatingFilter;
 import org.springframework.web.WebApplicationInitializer;
 import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
 import org.springframework.web.servlet.DispatcherServlet;
@@ -17,10 +18,7 @@ public class AppInitializer implements WebApplicationInitializer {
 	@Override
 	public void onStartup(ServletContext servletContext)
 			throws ServletException {
-		FilterRegistration.Dynamic dyn = servletContext.addFilter("rest",
-				RestFilter.class);
-		dyn.addMappingForUrlPatterns(EnumSet.of(DispatcherType.REQUEST), false,
-				"/api/*");
+
 		ServletRegistration.Dynamic dynamic = servletContext.addServlet("api",
 				DispatcherServlet.class);
 		dynamic.setInitParameter("contextClass",
@@ -28,7 +26,12 @@ public class AppInitializer implements WebApplicationInitializer {
 		dynamic.setInitParameter("contextConfigLocation",
 				ApiConfig.class.getName());
 		dynamic.addMapping("/api/*");
+		dynamic.setAsyncSupported(true);
 		dynamic.setLoadOnStartup(1);
+		FilterRegistration.Dynamic dynamicFilter = servletContext.addFilter(
+				"restFilter", DelegatingFilter.class);
+		dynamicFilter.setAsyncSupported(true);
+		dynamicFilter.addMappingForServletNames(
+				EnumSet.of(DispatcherType.REQUEST), true, "api");
 	}
-
 }

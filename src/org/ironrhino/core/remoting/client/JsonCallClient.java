@@ -18,11 +18,13 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.conn.ConnectTimeoutException;
 import org.apache.http.entity.StringEntity;
 import org.ironrhino.core.remoting.ServiceRegistry;
+import org.ironrhino.core.servlet.AccessFilter;
 import org.ironrhino.core.util.AppInfo;
 import org.ironrhino.core.util.HttpClientUtils;
 import org.ironrhino.core.util.JsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.remoting.support.RemoteInvocationBasedAccessor;
@@ -43,7 +45,7 @@ public class JsonCallClient extends RemoteInvocationBasedAccessor implements
 
 	private String contextPath;
 
-	private int maxRetryTimes = 3;
+	private int maxAttempts = 3;
 
 	private List<String> asyncMethods;
 
@@ -69,8 +71,8 @@ public class JsonCallClient extends RemoteInvocationBasedAccessor implements
 		this.contextPath = contextPath;
 	}
 
-	public void setMaxRetryTimes(int maxRetryTimes) {
-		this.maxRetryTimes = maxRetryTimes;
+	public void setMaxAttempts(int maxAttempts) {
+		this.maxAttempts = maxAttempts;
 	}
 
 	public void setAsyncMethods(String asyncMethods) {
@@ -125,7 +127,7 @@ public class JsonCallClient extends RemoteInvocationBasedAccessor implements
 					@Override
 					public void run() {
 						try {
-							invoke(invocation, maxRetryTimes);
+							invoke(invocation, maxAttempts);
 						} catch (Throwable e) {
 							log.error(e.getMessage(), e);
 						}
@@ -138,16 +140,19 @@ public class JsonCallClient extends RemoteInvocationBasedAccessor implements
 				return null;
 			}
 		}
-		return invoke(invocation, maxRetryTimes);
+		return invoke(invocation, maxAttempts);
 	}
 
-	public Object invoke(MethodInvocation invocation, int retryTimes)
+	public Object invoke(MethodInvocation invocation, int attempts)
 			throws Throwable {
-		retryTimes--;
 		try {
 			String url = getServiceUrl() + "/"
 					+ invocation.getMethod().getName();
 			HttpPost postMethod = new HttpPost(url);
+			String requestId = MDC.get(AccessFilter.MDC_KEY_REQUEST_ID);
+			if (requestId != null)
+				postMethod.addHeader(AccessFilter.HTTP_HEADER_REQUEST_ID,
+						requestId);
 			if (invocation.getMethod().getParameterTypes().length > 0)
 				postMethod.setEntity(new StringEntity(JsonUtils
 						.toJson(invocation.getArguments())));
@@ -170,6 +175,7 @@ public class JsonCallClient extends RemoteInvocationBasedAccessor implements
 				sb.append(line).append("\n");
 			reader.close();
 			is.close();
+			postMethod.releaseConnection();
 			String responseBody = null;
 			if (sb.length() > 0) {
 				sb.deleteCharAt(sb.length() - 1);
@@ -180,7 +186,7 @@ public class JsonCallClient extends RemoteInvocationBasedAccessor implements
 				return null;
 			return JsonUtils.fromJson(responseBody, t);
 		} catch (ConnectTimeoutException e) {
-			if (retryTimes < 0)
+			if (--attempts < 1)
 				throw e;
 			if (urlFromDiscovery) {
 				serviceRegistry.evict(host);
@@ -190,7 +196,7 @@ public class JsonCallClient extends RemoteInvocationBasedAccessor implements
 					log.info("relocate service url:" + serviceUrl);
 				}
 			}
-			return invoke(invocation, retryTimes);
+			return invoke(invocation, attempts);
 		}
 	}
 

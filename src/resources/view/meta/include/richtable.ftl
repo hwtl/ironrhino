@@ -52,7 +52,7 @@
 <#if dynamicAttributes['dynamicAttributes']??>
 <#local dynamicAttributes=dynamicAttributes+dynamicAttributes['dynamicAttributes']>
 </#if>
-<form id="<#if formid?has_content>${formid}<#else>${entityName}<#if Parameters.tab?? && Parameters[Parameters.tab]??>_${Parameters.tab+'_'+Parameters[Parameters.tab]}</#if>_form</#if>" action="${getUrl(action)}" method="post" class="richtable ajax view history"<#if actionBaseUrl!=action> data-actionbaseurl="${actionBaseUrl}"</#if><#if entityName!=action&&entityName?has_content> data-entity="${entityName}"</#if><#list dynamicAttributes?keys as attr><#if attr!='dynamicAttributes'> ${attr}="${dynamicAttributes[attr]?html}"</#if></#list>>
+<form id="<#if formid?has_content>${formid}<#else>${entityName}<#if Parameters.tab?? && Parameters[Parameters.tab]??>_${Parameters.tab+'_'+Parameters[Parameters.tab]}</#if>_form</#if>" action="${action}" method="post" class="richtable ajax view history"<#if actionBaseUrl!=action> data-actionbaseurl="${actionBaseUrl}"</#if><#if entityName!=action&&entityName?has_content> data-entity="${entityName}"</#if><#list dynamicAttributes?keys as attr><#if attr!='dynamicAttributes'> ${attr}="${dynamicAttributes[attr]?html}"</#if></#list>>
 ${formHeader!}
 <#nested/>
 <#if includeParameters>
@@ -114,7 +114,7 @@ ${formHeader!}
 <#local cellDynamicAttributes=cellDynamicAttributes+{'class':dynamicAttributes['class']+' '+cellDynamicAttributes['class']}>
 </#if>
 <#local dynamicAttributes=dynamicAttributes+cellDynamicAttributes>
-<td<#if value??><#if !dynamicAttributes['data-cellvalue']??&&template?has_content||value?is_boolean> data-cellvalue="${value?string}"<#elseif value?is_hash&&value.displayName??> data-cellvalue="${value.name()}"</#if></#if><#list dynamicAttributes?keys as attr><#if attr!='dynamicAttributes'> ${attr}="${dynamicAttributes[attr]?html}"</#if></#list>><#rt>
+<td<#if value??><#if !dynamicAttributes['data-cellvalue']??&&template?has_content||value?is_boolean> data-cellvalue="${value?string?html}"<#elseif value?is_hash&&value.displayName??> data-cellvalue="${value.name()?html}"</#if></#if><#list dynamicAttributes?keys as attr><#if attr!='dynamicAttributes'> ${attr}="${dynamicAttributes[attr]?html}"</#if></#list>><#rt>
 <#if !template?has_content>
 	<#if value??>
 		<#if value?is_boolean>
@@ -141,13 +141,13 @@ ${formHeader!}
 <@buttons?interpret/>
 <#else>
 <#if viewable>
-<button type="button" class="btn" data-view="view">${action.getText("view")}</button>
+<@btn view="view"/>
 </#if>
 <#if editable && !entityReadonly>
-<button type="button" class="btn" data-view="input">${action.getText("edit")}</button>
+<@btn view="input" label="edit"/>
 </#if>
 <#if treeable??&&treeable>
-<button type="button" class="btn" data-view="move">${action.getText("move")}</button>
+<@btn view="move"/>
 <a class="btn ajax view" href="${actionBaseUrl}?parent=${entity.id}">${action.getText("enter")}</a>
 </#if>
 </#if>
@@ -216,11 +216,11 @@ ${formHeader!}
 <@buttons?interpret/>
 <#else>
 <#if !readonly>
-<#if createable><button type="button" class="btn" data-view="input">${action.getText("create")}</button></#if>
-<#if celleditable><button type="button" class="btn confirm" data-action="save">${action.getText("save")}</button></#if>
+<#if createable><@btn view="input" label="create"/></#if>
+<#if celleditable><@btn action="save" confirm=true/></#if>
 <#if enableable>
-<button type="button" class="btn confirm" data-action="enable" data-shown="selected" data-filterselector="[data-enabled='false']:not([data-readonly='true'])">${action.getText("enable")}</button>
-<button type="button" class="btn confirm" data-action="disable" data-shown="selected" data-filterselector="[data-enabled='true']:not([data-readonly='true'])">${action.getText("disable")}</button>
+<@btn action="enable" confirm=true/>
+<@btn action="disable" confirm=true/>
 </#if>
 </#if>
 <#if !readonly||deletable><button type="button" class="btn confirm" data-action="delete" data-shown="selected" data-filterselector="<#if enableable>[data-enabled='false']</#if>:not([data-deletable='false'])">${action.getText("delete")}</button></#if>
@@ -231,14 +231,14 @@ ${formHeader!}
 <a class="btn ajax view" href="${actionBaseUrl}">${action.getText("upward")}</a>
 </#if>
 </#if>
-<button type="button" class="btn reload">${action.getText("reload")}</button>
-<#if filterable><button type="button" class="btn filter">${action.getText("filter")}</button></#if>
+<@btn class="reload"/>
+<#if filterable><@btn class="filter"/></#if>
 </#if>
 </div>
 </#if>
 <div class="search span<#if showBottomButtons>2<#else>3</#if>">
 <#if searchable>
-<span class="input-append">
+<span class="input-append search">
     <input type="text" name="keyword" value="${keyword!?html}" placeholder="${action.getText('search')}"/><span class="add-on"><i class="glyphicon glyphicon-search clickable"></i></span>
 </span>
 </#if>
@@ -340,4 +340,8 @@ ${formFooter!}
 </table>
 </form>
 </#if>
+</#macro>
+
+<#macro btn view="" action="" class="" label="" confirm=false windowoptions="">
+<#if class?has_content><button type="button" class="btn ${class}">${statics['org.ironrhino.core.struts.I18N'].getText(label?has_content?string(label,class))}</button><#else><button type="button" class="btn<#if confirm&&action?has_content> confirm</#if>" data-<#if view?has_content>view="${view}"<#elseif action?has_content>action="${action}"</#if><#if action='delete'> data-shown="selected" data-filterselector=":not([data-deletable='false'])"<#elseif action='enable'> data-shown="selected" data-filterselector="[data-enabled='false']:not([data-readonly='true'])"<#elseif action='disable'> data-shown="selected" data-filterselector="[data-enabled='true']:not([data-readonly='true'])"</#if><#if view?has_content&&windowoptions?has_content><#assign single=windowoptions?contains('"')/> data-windowoptions=${single?string("'",'"')+windowoptions+single?string("'",'"')}</#if>>${statics['org.ironrhino.core.struts.I18N'].getText(label?has_content?string(label,view?has_content?string(view,action)))}</button></#if>
 </#macro>

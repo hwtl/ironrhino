@@ -16,9 +16,9 @@
 <#if notlogin>
 <div class="row">
 	<div class="span6 offset3">
-	<div class="hero-unit">
 	<h2 class="caption">${action.getText('login')}</h2>
-	<@s.form id="login" action="login" method="post" class="ajax focus form-horizontal well">
+	<div class="hero-unit">
+	<@s.form id="login" action="${actionBaseUrl}" method="post" class="ajax focus form-horizontal well">
 		<@s.hidden id="targetUrl" name="targetUrl" />
 		<@s.textfield label="%{getText('username')}" name="username" class="required span2"/>
 		<@s.password label="%{getText('password')}" name="password" class="required span2 input-pattern submit"/>

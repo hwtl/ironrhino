@@ -9,6 +9,7 @@ import org.aspectj.lang.annotation.Aspect;
 import org.ironrhino.core.util.ExpressionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.Ordered;
 import org.springframework.stereotype.Component;
 
 @Aspect
@@ -18,23 +19,32 @@ public class TimingAspect extends BaseAspect {
 	private Logger logger = LoggerFactory.getLogger(getClass());
 
 	public TimingAspect() {
-		order = -1000;
+		order = Ordered.HIGHEST_PRECEDENCE + 2;
 	}
 
 	@Around("execution(public * *(..)) and @annotation(timing)")
 	public Object timing(ProceedingJoinPoint jp, Timing timing)
 			throws Throwable {
 		long time = System.currentTimeMillis();
-		Object result = jp.proceed();
+		Object result = null;
+		Throwable throwable = null;
+		try {
+			result = jp.proceed();
+		} catch (Throwable e) {
+			throwable = e;
+		}
 		time = System.currentTimeMillis() - time;
 		String method = jp.getStaticPart().getSignature().toLongString();
-		logger.info("{} takes {} ms", method, time);
+		logger.info("method[ {} ] tooks {} ms and {}", method, time,
+				throwable == null ? "success" : "fail");
 		if (StringUtils.isNotBlank(timing.value())) {
 			Map<String, Object> context = buildContext(jp);
 			context.put("method", method);
 			context.put("time", time);
 			ExpressionUtils.eval(timing.value(), context);
 		}
+		if (throwable != null)
+			throw throwable;
 		return result;
 	}
 

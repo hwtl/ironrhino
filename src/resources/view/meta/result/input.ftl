@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <#escape x as x?html><html>
 <head>
-<title><#if !entity??><#assign entity=entityName?eval></#if><#assign isnew = !entity??||entity.new/><#assign isnew = !entity??||entity.new/><#if idAssigned><#assign isnew=!entity??||!entity.id?has_content/></#if><#if isnew>${action.getText('create')}<#else>${action.getText('edit')}</#if>${action.getText(entityName)}</title>
+<title><#if !entity??><#assign entity=entityName?eval></#if><#assign isnew = !entity??||entity.new/><#assign isnew = !entity??||entity.new/><#if idAssigned><#assign isnew=!entity??||!entity.id?has_content/></#if><#if isnew>${action.getText('create')}<#else>${action.getText('edit')}</#if>${action.getText((richtableConfig.alias?has_content)?string(richtableConfig.alias!,entityName))}</title>
 </head>
 <body>
 <@s.form action="${actionBaseUrl}/save" method="post" cssClass="ajax form-horizontal${richtableConfig.importable?string(' importable','')} groupable">
@@ -39,6 +39,10 @@
 		</#if>
 		<#if !(entity.new && readonly)>
 			<#assign id=(config.id?has_content)?string(config.id!,entityName+'-'+key)/>
+			<#assign dynamicAttributes=config.dynamicAttributes/>
+			<#if config.group?has_content>
+				<#assign dynamicAttributes=dynamicAttributes+{'data-group':action.getText(config.group)}/>
+			</#if>
 			<#if config.inputTemplate?has_content>
 				<div class="control-group"<#if config.group?has_content> data-group="${action.getText(config.group)}"</#if>>
 					<label class="control-label">${action.getText(label)}</label>
@@ -47,31 +51,33 @@
 					</div>
 				</div>
 			<#elseif config.type=='textarea'>
-				<#assign dynamicAttributes=config.dynamicAttributes/>
 				<#if config.maxlength gt 0>
 				<#assign dynamicAttributes=dynamicAttributes+{"maxlength":config.maxlength}>
 				</#if>
-				<@s.textarea group=action.getText(config.group)! id=id label="%{getText('${label}')}" name=entityName+"."+key cssClass=config.cssClass+(config.cssClass?contains('span')||config.cssClass?contains('input-'))?string('',' input-xxlarge') readonly=readonly dynamicAttributes=dynamicAttributes/>
+				<@s.textarea id=id label="%{getText('${label}')}" name=entityName+"."+key cssClass=config.cssClass+(config.cssClass?contains('span')||config.cssClass?contains('input-'))?string('',' input-xxlarge') readonly=readonly dynamicAttributes=dynamicAttributes/>
 			<#elseif config.type=='checkbox'>
-				<@s.checkbox readonly=readonly group=action.getText(config.group)! id=id label="%{getText('${label}')}" name=entityName+"."+key cssClass=config.cssClass+config.cssClass?has_content?string(' ','')+"custom" dynamicAttributes=config.dynamicAttributes />
+				<#if readonly>
+					<@s.hidden name=entityName+"."+key/>
+				</#if>
+				<@s.checkbox disabled=readonly id=id label="%{getText('${label}')}" name=entityName+"."+key cssClass=config.cssClass+config.cssClass?has_content?string(' ','')+"custom" dynamicAttributes=dynamicAttributes />
 			<#elseif config.type=='enum'>
 				<#if readonly>
 					<@s.hidden name=entityName+"."+key value="${(entity[key].name())!}"/>
 				</#if>
-				<@s.select disabled=readonly group=action.getText(config.group)! id=id label="%{getText('${label}')}" name=entityName+"."+key cssClass=config.cssClass list="@${config.propertyType.name}@values()" listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" dynamicAttributes=config.dynamicAttributes/>
+				<@s.select disabled=readonly id=id label="%{getText('${label}')}" name=entityName+"."+key cssClass=config.cssClass list="@${config.propertyType.name}@values()" listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" dynamicAttributes=dynamicAttributes/>
 			<#elseif config.type=='select'>
 				<#if readonly>
 					<@s.hidden name=entityName+"."+key />
 				</#if>
-				<@s.select disabled=readonly group=action.getText(config.group)! id=id label="%{getText('${label}')}" name=entityName+"."+key cssClass=config.cssClass list=config.optionsExpression?eval listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" dynamicAttributes=config.dynamicAttributes/>
+				<@s.select disabled=readonly id=id label="%{getText('${label}')}" name=entityName+"."+key cssClass=config.cssClass list=config.optionsExpression?eval listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" dynamicAttributes=dynamicAttributes/>
 			<#elseif config.type=='multiselect'>
 				<#if readonly>
 					<@s.hidden name=entityName+"."+key />
 				</#if>
-				<@s.select disabled=readonly group=action.getText(config.group)! id=id label="%{getText('${label}')}" name=entityName+"."+key cssClass=config.cssClass list=config.optionsExpression?eval listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" multiple=true dynamicAttributes=config.dynamicAttributes/>
+				<@s.select disabled=readonly id=id label="%{getText('${label}')}" name=entityName+"."+key cssClass=config.cssClass list=config.optionsExpression?eval listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" multiple=true dynamicAttributes=dynamicAttributes/>
 			<#elseif config.type=='listpick'>
 				<div class="control-group <#if readonly>_</#if>listpick" data-options="{'url':'<@url value=config.pickUrl/>'}"<#if config.group?has_content> data-group="${action.getText(config.group)}"</#if>>
-					<@s.hidden id=id name=entityName+"."+key+".id" cssClass="listpick-id ${config.cssClass}"/>
+					<@s.hidden id=id name=entityName+"."+key+".id" cssClass="listpick-id ${config.cssClass}" dynamicAttributes=dynamicAttributes/>
 					<label class="control-label">${action.getText(label)}</label>
 					<div class="controls<#if readonly> text</#if>">
 					<span class="listpick-name"><#if entity[key]??><#if entity[key].fullname??>${entity[key].fullname!}<#else>${entity[key]!}</#if></#if></span>
@@ -92,7 +98,7 @@
 					<#if readonly>
 						<@s.hidden name=entityName+"."+key />
 					</#if>
-					<@selectDictionary disabled=readonly id=id dictionaryName=templateName name=entityName+"."+key required=config.required class=config.cssClass dynamicAttributes=config.dynamicAttributes/>
+					<@selectDictionary disabled=readonly id=id dictionaryName=templateName name=entityName+"."+key required=config.required class=config.cssClass dynamicAttributes=dynamicAttributes/>
 				</div>
 				</div>
 			<#elseif config.type=='attributes'>
@@ -132,7 +138,7 @@
 			<#elseif config.type=='imageupload'>
 				<#if !readonly>
 					<div class="control-group"<#if config.group?has_content> data-group="${action.getText(config.group)}"</#if>>
-						<@s.hidden id=id name=entityName+"."+key cssClass=config.cssClass+" nocheck" maxlength=(config.maxlength gt 0)?string(config.maxlength,'') dynamicAttributes=config.dynamicAttributes/>
+						<@s.hidden id=id name=entityName+"."+key cssClass=config.cssClass+" nocheck" maxlength=(config.maxlength gt 0)?string(config.maxlength,'') dynamicAttributes=dynamicAttributes/>
 						<label class="control-label" for="${id}-upload-button">${action.getText(label)}</label>
 						<div class="controls">
 							<div style="margin-bottom:5px;">
@@ -152,7 +158,7 @@
 					</div>
 				<#else>
 					<div class="control-group"<#if config.group?has_content> data-group="${action.getText(config.group)}"</#if>>
-						<@s.hidden id=id name=entityName+"."+key cssClass=config.cssClass+" nocheck" maxlength=(config.maxlength gt 0)?string(config.maxlength,'') dynamicAttributes=config.dynamicAttributes/>
+						<@s.hidden id=id name=entityName+"."+key cssClass=config.cssClass+" nocheck" maxlength=(config.maxlength gt 0)?string(config.maxlength,'') dynamicAttributes=dynamicAttributes/>
 						<label class="control-label">${action.getText(label)}</label>
 						<div class="controls">
 							<span>
@@ -178,31 +184,34 @@
 					</#if>
 					<#assign readonly=config.readonly.value||config.readonly.expression?has_content&&config.readonly.expression?eval>
 					<#assign id=(config.id?has_content)?string(config.id!,entityName+'-'+key+'-'+entry.key)/>
+					<#assign dynamicAttributes=config.dynamicAttributes/>	
+					<#if config.group?has_content>
+						<#assign dynamicAttributes=dynamicAttributes+{'data-group':action.getText(config.group)}/>
+					</#if>			
 					<#if config.inputTemplate?has_content>
 						<@config.inputTemplate?interpret/>
 					<#elseif config.type=='textarea'>
-						<#assign dynamicAttributes=config.dynamicAttributes/>
 						<#if config.maxlength gt 0>
 						<#assign dynamicAttributes=dynamicAttributes+{"maxlength":config.maxlength}>
 						</#if>
-						<@s.textarea group=action.getText(config.group)! id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key cssClass=config.cssClass+(config.cssClass?contains('span')||config.cssClass?contains('input-'))?string('',' input-xxlarge') readonly=readonly dynamicAttributes=dynamicAttributes/>
+						<@s.textarea id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key cssClass=config.cssClass+(config.cssClass?contains('span')||config.cssClass?contains('input-'))?string('',' input-xxlarge') readonly=readonly dynamicAttributes=dynamicAttributes/>
 					<#elseif config.type=='checkbox'>
-						<@s.checkbox readonly=readonly group=action.getText(config.group)! id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key cssClass=config.cssClass+config.cssClass?has_content?string(' ','')+"custom" dynamicAttributes=config.dynamicAttributes />
+						<@s.checkbox readonly=readonly id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key cssClass=config.cssClass+config.cssClass?has_content?string(' ','')+"custom" dynamicAttributes=dynamicAttributes />
 					<#elseif config.type=='enum'>
 						<#if readonly>
 						<@s.hidden name=entityName+"."+key value="${(entity[key].name())!}"/>
 						</#if>
-						<@s.select disabled=readonly group=action.getText(config.group)! id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key cssClass=config.cssClass list="@${config.propertyType.name}@values()" listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" dynamicAttributes=config.dynamicAttributes/>
+						<@s.select disabled=readonly id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key cssClass=config.cssClass list="@${config.propertyType.name}@values()" listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" dynamicAttributes=dynamicAttributes/>
 					<#elseif config.type=='select'>
 						<#if readonly>
 						<@s.hidden name=entityName+"."+key/>
 						</#if>
-						<@s.select disabled=readonly group=action.getText(config.group)! id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key cssClass=config.cssClass list=config.optionsExpression?eval listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" dynamicAttributes=config.dynamicAttributes/>
+						<@s.select disabled=readonly id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key cssClass=config.cssClass list=config.optionsExpression?eval listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" dynamicAttributes=dynamicAttributes/>
 					<#elseif config.type=='multiselect'>
 						<#if readonly>
 						<@s.hidden name=entityName+"."+key/>
 						</#if>
-						<@s.select disabled=readonly group=action.getText(config.group)! id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key cssClass=config.cssClass list=config.optionsExpression?eval listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" multiple=true dynamicAttributes=config.dynamicAttributes/>
+						<@s.select disabled=readonly id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key cssClass=config.cssClass list=config.optionsExpression?eval listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" multiple=true dynamicAttributes=dynamicAttributes/>
 					<#elseif config.type=='dictionary' && selectDictionary??>
 						<div class="control-group"<#if config.group?has_content> data-group="${action.getText(config.group)}"</#if>>
 						<label class="control-label">${action.getText(label)}</label>
@@ -210,12 +219,12 @@
 						<#if readonly>
 							<@s.hidden name=entityName+"."+key />
 						</#if>
-						<@selectDictionary disabled=readonly id="" dictionaryName=config.templateName name=entityName+'.'+key+'.'+entry.key required=config.required class=config.cssClass dynamicAttributes=config.dynamicAttributes/>
+						<@selectDictionary disabled=readonly id="" dictionaryName=config.templateName name=entityName+'.'+key+'.'+entry.key required=config.required class=config.cssClass dynamicAttributes=dynamicAttributes/>
 						</div>
 						</div>
 					<#elseif config.type=='listpick'>
 						<div class="control-group <#if readonly>_</#if>listpick" data-options="{'url':'<@url value=config.pickUrl/>'}"<#if config.group?has_content> data-group="${action.getText(config.group)}"</#if>>
-						<@s.hidden id=id name=entityName+'.'+key+'.'+entry.key+".id" cssClass="listpick-id ${config.cssClass}"/>
+						<@s.hidden id=id name=entityName+'.'+key+'.'+entry.key+".id" cssClass="listpick-id ${config.cssClass}" dynamicAttributes=dynamicAttributes/>
 						<label class="control-label">${action.getText(label)}</label>
 							<div class="controls<#if readonly> text</#if>">
 							<span class=" listpick-name"><#if entity[key][entry.key]??><#if entity[key][entry.key].fullname??>${entity[key][entry.key].fullname!}<#else>${entity[key][entry.key]!}</#if></#if></span>
@@ -231,11 +240,11 @@
 						</div>
 					<#else>
 						<#if config.cssClass?contains('datetime')>
-							<@s.textfield group=action.getText(config.group)! value=(entity[key][entry.key]?string('yyyy-MM-dd HH:mm:ss'))! id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key type=config.inputType cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=config.dynamicAttributes />
+							<@s.textfield id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key type=config.inputType value=(entity[key][entry.key]?string('yyyy-MM-dd HH:mm:ss'))! cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=dynamicAttributes />
 						<#elseif config.cssClass?contains('time')>
-							<@s.textfield group=action.getText(config.group)! value=(entity[key][entry.key]?string('HH:mm:ss'))! id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key type=config.inputType cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=config.dynamicAttributes />
+							<@s.textfield id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key type=config.inputType value=(entity[key][entry.key]?string('HH:mm:ss'))! cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=dynamicAttributes />
 						<#else>
-							<@s.textfield group=action.getText(config.group)! id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key type=config.inputType cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=config.dynamicAttributes />
+							<@s.textfield id=id label="%{getText('${label}')}" name=entityName+'.'+key+'.'+entry.key type=config.inputType cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=dynamicAttributes />
 						</#if>
 					</#if>
 					</#if>
@@ -284,39 +293,39 @@
 								<td>
 								<#assign value=(entity[key][index][entry.key])!>
 								<#assign readonly=config.readonly.value||config.readonly.expression?has_content&&config.readonly.expression?eval>
+								<#assign dynamicAttributes=config.dynamicAttributes/>
 								<#if config.inputTemplate?has_content>
 									<@config.inputTemplate?interpret/>
 								<#elseif config.type=='textarea'>
-									<#assign dynamicAttributes=config.dynamicAttributes/>
 									<#if config.maxlength gt 0>
 									<#assign dynamicAttributes=dynamicAttributes+{"maxlength":config.maxlength}>
 									</#if>
 									<@s.textarea readonly=readonly id="" theme="simple" name=entityName+"."+key+'['+index+'].'+entry.key cssClass=config.cssClass+(config.cssClass?contains('span')||config.cssClass?contains('input-'))?string('',' input-xxlarge') readonly=readonly dynamicAttributes=dynamicAttributes/>
 								<#elseif config.type=='checkbox'>
-									<@s.checkbox readonly=readonly id="" theme="simple" name=entityName+"."+key+'['+index+'].'+entry.key cssClass=config.cssClass+config.cssClass?has_content?string(' ','')+"custom" dynamicAttributes=config.dynamicAttributes />
+									<@s.checkbox readonly=readonly id="" theme="simple" name=entityName+"."+key+'['+index+'].'+entry.key cssClass=config.cssClass+config.cssClass?has_content?string(' ','')+"custom" dynamicAttributes=dynamicAttributes />
 								<#elseif config.type=='enum'>
 									<#if readonly>
 										<@s.hidden name=entityName+"."+key+"["+index+"]."+entry.key value="${(entity[key][index][entry.key].name())!}"/>
 									</#if>
-									<@s.select disabled=readonly id="" theme="simple" name=entityName+"."+key+'['+index+'].'+entry.key cssClass=config.cssClass list="@${config.propertyType.name}@values()" listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" dynamicAttributes=config.dynamicAttributes/>
+									<@s.select disabled=readonly id="" theme="simple" name=entityName+"."+key+'['+index+'].'+entry.key cssClass=config.cssClass list="@${config.propertyType.name}@values()" listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" dynamicAttributes=dynamicAttributes/>
 								<#elseif config.type=='select'>
 									<#if readonly>
 										<@s.hidden name=entityName+"."+key+"["+index+"]."+entry.key />
 									</#if>
-									<@s.select disabled=readonly id="" theme="simple" name=entityName+"."+key+'['+index+'].'+entry.key cssClass=config.cssClass list=config.optionsExpression?eval listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" dynamicAttributes=config.dynamicAttributes/>
+									<@s.select disabled=readonly id="" theme="simple" name=entityName+"."+key+'['+index+'].'+entry.key cssClass=config.cssClass list=config.optionsExpression?eval listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" dynamicAttributes=dynamicAttributes/>
 								<#elseif config.type=='multiselect'>
 									<#if readonly>
 										<@s.hidden name=entityName+"."+key+"["+index+"]."+entry.key />
 									</#if>
-									<@s.select disabled=readonly id="" theme="simple" name=entityName+"."+key+'['+index+'].'+entry.key cssClass=config.cssClass list=config.optionsExpression?eval listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" multiple=true dynamicAttributes=config.dynamicAttributes/>
+									<@s.select disabled=readonly id="" theme="simple" name=entityName+"."+key+'['+index+'].'+entry.key cssClass=config.cssClass list=config.optionsExpression?eval listKey=config.listKey listValue=config.listValue headerKey="" headerValue="" multiple=true dynamicAttributes=dynamicAttributes/>
 								<#elseif config.type=='dictionary' && selectDictionary??>
 									<#if readonly>
 										<@s.hidden name=entityName+"."+key+"["+index+"]."+entry.key />
 									</#if>
-									<@selectDictionary disabled=readonly id="" dictionaryName=config.templateName name=entityName+"."+key+'['+index+'].'+entry.key required=config.required class=config.cssClass dynamicAttributes=config.dynamicAttributes/>
+									<@selectDictionary disabled=readonly id="" dictionaryName=config.templateName name=entityName+"."+key+'['+index+'].'+entry.key required=config.required class=config.cssClass dynamicAttributes=dynamicAttributes/>
 								<#elseif config.type=='listpick'>
 										<div class="<#if readonly>_</#if>listpick" data-options="{'url':'<@url value=config.pickUrl/>'}">
-										<@s.hidden name=entityName+"."+key+'['+index+'].'+entry.key+".id" cssClass="listpick-id ${config.cssClass}"/>
+										<@s.hidden name=entityName+"."+key+'['+index+'].'+entry.key+".id" cssClass="listpick-id ${config.cssClass}" dynamicAttributes=dynamicAttributes/>
 										<span class="listpick-name"><#if (entity[key][index][entry.key])??><#if entity[key][index][entry.key].fullname??>${entity[key][index][entry.key].fullname!}<#else>${entity[key][index][entry.key]!}</#if><#else><i class="glyphicon glyphicon-list"></i></#if></span>
 										</div>
 								<#elseif config.type=='treeselect'>
@@ -326,11 +335,11 @@
 										</div>
 								<#else>
 									<#if config.cssClass?contains('datetime')>
-										<@s.textfield value=(entity[key]?string('yyyy-MM-dd HH:mm:ss'))! id="" theme="simple" name=entityName+"."+key+'['+index+'].'+entry.key type=config.inputType cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=config.dynamicAttributes />
+										<@s.textfield id="" theme="simple" name=entityName+"."+key+'['+index+'].'+entry.key type=config.inputType value=(entity[key][index][entry.key]?string('yyyy-MM-dd HH:mm:ss'))! cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=dynamicAttributes />
 									<#elseif config.cssClass?contains('time')>
-										<@s.textfield value=(entity[key]?string('HH:mm:ss'))! id="" theme="simple" name=entityName+"."+key+'['+index+'].'+entry.key type=config.inputType cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=config.dynamicAttributes />
+										<@s.textfield id="" theme="simple" name=entityName+"."+key+'['+index+'].'+entry.key type=config.inputType value=(entity[key][index][entry.key]?string('HH:mm:ss'))! cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=dynamicAttributes />
 									<#else>
-										<@s.textfield  id="" theme="simple" name=entityName+"."+key+'['+index+'].'+entry.key type=config.inputType cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=config.dynamicAttributes />
+										<@s.textfield id="" theme="simple" name=entityName+"."+key+'['+index+'].'+entry.key type=config.inputType cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=dynamicAttributes />
 									</#if>
 								</#if>
 								</td>
@@ -344,18 +353,22 @@
 					</div>
 				</div>
 			<#else>
+				<#assign dynamicAttributes=config.dynamicAttributes/>
+				<#if config.group?has_content>
+				<#assign dynamicAttributes=dynamicAttributes+{'data-group':action.getText(config.group)}/>
+				</#if>
 				<#if config.cssClass?contains('datetime')>
-					<@s.textfield group=action.getText(config.group)! value=(entity[key]?string('yyyy-MM-dd HH:mm:ss'))! id=id label="%{getText('${label}')}" name=entityName+"."+key type=config.inputType cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=config.dynamicAttributes />
+					<@s.textfield id=id label="%{getText('${label}')}" name=entityName+"."+key type=config.inputType value=(entity[key]?string('yyyy-MM-dd HH:mm:ss'))! cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=dynamicAttributes />
 				<#elseif config.cssClass?contains('time')>
-					<@s.textfield group=action.getText(config.group)! value=(entity[key]?string('HH:mm:ss'))! id=id label="%{getText('${label}')}" name=entityName+"."+key type=config.inputType cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=config.dynamicAttributes />
+					<@s.textfield id=id label="%{getText('${label}')}" name=entityName+"."+key type=config.inputType value=(entity[key]?string('HH:mm:ss'))! cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=dynamicAttributes />
 				<#else>
-					<@s.textfield group=action.getText(config.group)! id=id label="%{getText('${label}')}" name=entityName+"."+key type=config.inputType cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=config.dynamicAttributes />
+					<@s.textfield id=id label="%{getText('${label}')}" name=entityName+"."+key type=config.inputType cssClass=config.cssClass maxlength="${(config.maxlength gt 0)?string(config.maxlength,'')}" readonly=readonly dynamicAttributes=dynamicAttributes />
 				</#if>
 			</#if>
 		</#if>
 		</#if>
 	</#list>
-	<@s.submit value="%{getText('save')}" cssClass="btn-primary"/>
+	<@s.submit value="%{getText('save')}" class="btn-primary"/>
 </@s.form>
 </body>
 </html></#escape>

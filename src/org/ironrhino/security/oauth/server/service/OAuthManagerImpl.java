@@ -8,31 +8,38 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 
-import javax.annotation.Resource;
-
 import org.apache.commons.lang3.StringUtils;
 import org.hibernate.criterion.DetachedCriteria;
 import org.hibernate.criterion.Order;
 import org.hibernate.criterion.Restrictions;
 import org.ironrhino.core.metadata.Trigger;
-import org.ironrhino.core.service.EntityManager;
+import org.ironrhino.core.spring.configuration.ResourcePresentConditional;
 import org.ironrhino.core.util.CodecUtils;
-import org.ironrhino.security.model.User;
 import org.ironrhino.security.oauth.server.model.Authorization;
 import org.ironrhino.security.oauth.server.model.Client;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 @Component("oauthManager")
 @Profile({ DEFAULT, DUAL, CLOUD })
-@SuppressWarnings({ "unchecked", "rawtypes" })
+@ResourcePresentConditional(value = "resources/spring/applicationContext-oauth.xml", negated = true)
 public class OAuthManagerImpl implements OAuthManager {
 
-	@Resource
-	private EntityManager entityManager;
+	@Autowired
+	private ClientManager clientManager;
 
-	private long expireTime = DEFAULT_EXPIRE_TIME;
+	@Autowired
+	private AuthorizationManager authorizationManager;
+
+	@Value("${oauth.authorization.lifetime:3600}")
+	private int authorizationLifetime;
+
+	@Value("${oauth.authorization.expireTime:" + DEFAULT_EXPIRE_TIME + "}")
+	private long expireTime;
 
 	public void setExpireTime(long expireTime) {
 		this.expireTime = expireTime;
@@ -47,26 +54,29 @@ public class OAuthManagerImpl implements OAuthManager {
 	public Authorization grant(Client client) {
 		Client orig = findClientById(client.getClientId());
 		if (orig == null)
-			throw new IllegalArgumentException("CLIENT_ID_NOT_EXISTS");
+			throw new IllegalArgumentException("client_id_not_exists");
 		if (!orig.getSecret().equals(client.getSecret()))
-			throw new IllegalArgumentException("CLIENT_SECRET_MISMATCH");
-		entityManager.setEntityClass(Authorization.class);
+			throw new IllegalArgumentException("client_secret_mismatch");
 		Authorization auth = new Authorization();
-		auth.setClient(client);
+		if (authorizationLifetime > 0)
+			auth.setLifetime(authorizationLifetime);
+		auth.setClient(client.getId());
 		auth.setResponseType("token");
 		auth.setRefreshToken(CodecUtils.nextId());
-		entityManager.save(auth);
+		authorizationManager.save(auth);
 		return auth;
 	}
 
 	@Override
-	public Authorization grant(Client client, User grantor) {
+	public Authorization grant(Client client, UserDetails grantor) {
 		Authorization auth = new Authorization();
-		auth.setClient(client);
-		auth.setGrantor(grantor);
+		if (authorizationLifetime > 0)
+			auth.setLifetime(authorizationLifetime);
+		auth.setClient(client.getId());
+		auth.setGrantor(grantor.getUsername());
 		auth.setResponseType("token");
 		auth.setRefreshToken(CodecUtils.nextId());
-		entityManager.save(auth);
+		authorizationManager.save(auth);
 		return auth;
 	}
 
@@ -74,14 +84,16 @@ public class OAuthManagerImpl implements OAuthManager {
 	public Authorization generate(Client client, String redirectUri,
 			String scope, String responseType) {
 		if (!client.supportsRedirectUri(redirectUri))
-			throw new IllegalArgumentException("REDIRECT_URI_MISMATCH");
+			throw new IllegalArgumentException("redirect_uri_mismatch");
 		Authorization auth = new Authorization();
-		auth.setClient(client);
+		if (authorizationLifetime > 0)
+			auth.setLifetime(authorizationLifetime);
+		auth.setClient(client.getId());
 		if (StringUtils.isNotBlank(scope))
 			auth.setScope(scope);
 		if (StringUtils.isNotBlank(responseType))
 			auth.setResponseType(responseType);
-		entityManager.save(auth);
+		authorizationManager.save(auth);
 		return auth;
 	}
 
@@ -90,70 +102,57 @@ public class OAuthManagerImpl implements OAuthManager {
 		auth.setCode(CodecUtils.nextId());
 		auth.setModifyDate(new Date());
 		auth.setLifetime(Authorization.DEFAULT_LIFETIME);
-		entityManager.save(auth);
+		authorizationManager.save(auth);
 		return auth;
 	}
 
 	@Override
-	public Authorization grant(String authorizationId, User grantor) {
-		entityManager.setEntityClass(Authorization.class);
-		Authorization auth = (Authorization) entityManager.get(authorizationId);
+	public Authorization grant(String authorizationId, UserDetails grantor) {
+		Authorization auth = authorizationManager.get(authorizationId);
 		if (auth == null)
-			throw new IllegalArgumentException("BAD_AUTH");
-		auth.setGrantor(grantor);
+			throw new IllegalArgumentException("bad_auth");
+		auth.setGrantor(grantor.getUsername());
 		auth.setModifyDate(new Date());
 		if (!auth.isClientSide())
 			auth.setCode(CodecUtils.nextId());
-		entityManager.save(auth);
+		authorizationManager.save(auth);
 		return auth;
 	}
 
 	@Override
 	public void deny(String authorizationId) {
-		entityManager.setEntityClass(Authorization.class);
-		Authorization auth = (Authorization) entityManager.get(authorizationId);
+		Authorization auth = authorizationManager.get(authorizationId);
 		if (auth != null)
-			entityManager.delete(auth);
+			authorizationManager.delete(auth);
 	}
 
 	@Override
 	public Authorization authenticate(String code, Client client) {
-		entityManager.setEntityClass(Authorization.class);
-		Authorization auth = (Authorization) entityManager
-				.findOne("code", code);
+		Authorization auth = authorizationManager.findOne("code", code);
 		if (auth == null)
-			throw new IllegalArgumentException("CODE_INVALID");
+			throw new IllegalArgumentException("code_invalid");
 		if (auth.isClientSide())
-			throw new IllegalArgumentException("NOT_SERVER_SIDE");
+			throw new IllegalArgumentException("not_server_side");
 		if (auth.getGrantor() == null)
-			throw new IllegalArgumentException("USER_NOT_GRANTED");
-		Client orig = auth.getClient();
+			throw new IllegalArgumentException("user_not_granted");
+		Client orig = findClientById(auth.getClient());
 		if (!orig.getId().equals(client.getId()))
-			throw new IllegalArgumentException("CLIENT_ID_MISMATCH");
+			throw new IllegalArgumentException("client_id_mismatch");
 		if (!orig.getSecret().equals(client.getSecret()))
-			throw new IllegalArgumentException("CLIENT_SECRET_MISMATCH");
+			throw new IllegalArgumentException("client_secret_mismatch");
 		if (!orig.supportsRedirectUri(client.getRedirectUri()))
-			throw new IllegalArgumentException("REDIRECT_URI_MISMATCH");
+			throw new IllegalArgumentException("redirect_uri_mismatch");
 		auth.setCode(null);
 		auth.setRefreshToken(CodecUtils.nextId());
 		auth.setModifyDate(new Date());
-		entityManager.save(auth);
+		authorizationManager.save(auth);
 		return auth;
 	}
 
 	@Override
 	public Authorization retrieve(String accessToken) {
-		entityManager.setEntityClass(Authorization.class);
-		Authorization auth = (Authorization) entityManager
-				.findByNaturalId(accessToken);
-		if (auth != null) {
-			if (auth.getClient() != null && !auth.getClient().isEnabled()) {
-				entityManager.delete(auth);
-				return null;
-			}
-			if (auth.getExpiresIn() < 0)
-				return null;
-		}
+		Authorization auth = authorizationManager
+				.findByAccessToken(accessToken);
 		return auth;
 	}
 
@@ -161,83 +160,63 @@ public class OAuthManagerImpl implements OAuthManager {
 	public Authorization refresh(Client client, String refreshToken) {
 		Client orig = findClientById(client.getClientId());
 		if (orig == null)
-			throw new IllegalArgumentException("CLIENT_ID_NOT_EXISTS");
+			throw new IllegalArgumentException("client_id_not_exists");
 		if (!orig.getSecret().equals(client.getSecret()))
-			throw new IllegalArgumentException("CLIENT_SECRET_MISMATCH");
-		entityManager.setEntityClass(Authorization.class);
-		Authorization auth = (Authorization) entityManager.findOne(
-				"refreshToken", refreshToken);
+			throw new IllegalArgumentException("client_secret_mismatch");
+		Authorization auth = authorizationManager.findOne("refreshToken",
+				refreshToken);
 		if (auth == null)
-			throw new IllegalArgumentException("INVALID_TOKEN");
-		if (auth.getClient() != null && !auth.getClient().isEnabled()) {
-			entityManager.delete(auth);
-			return null;
-		}
+			throw new IllegalArgumentException("invalid_token");
 		auth.setAccessToken(CodecUtils.nextId());
 		auth.setRefreshToken(CodecUtils.nextId());
 		auth.setModifyDate(new Date());
-		entityManager.save(auth);
+		authorizationManager.save(auth);
 		return auth;
 	}
 
 	@Override
 	public void revoke(String accessToken) {
-		entityManager.setEntityClass(Authorization.class);
-		Authorization auth = (Authorization) entityManager
-				.findByNaturalId(accessToken);
+		Authorization auth = authorizationManager.findByNaturalId(accessToken);
 		if (auth != null)
-			entityManager.delete(auth);
+			authorizationManager.delete(auth);
 	}
 
 	@Override
 	public void create(Authorization authorization) {
-		entityManager.save(authorization);
+		authorizationManager.save(authorization);
 	}
 
 	@Override
-	public List<Authorization> findAuthorizationsByGrantor(User grantor) {
-		entityManager.setEntityClass(Authorization.class);
-		DetachedCriteria dc = entityManager.detachedCriteria();
-		dc.add(Restrictions.eq("grantor", grantor));
+	public List<Authorization> findAuthorizationsByGrantor(UserDetails grantor) {
+		DetachedCriteria dc = authorizationManager.detachedCriteria();
+		dc.add(Restrictions.eq("grantor", grantor.getUsername()));
 		dc.addOrder(Order.desc("modifyDate"));
-		return entityManager.findListByCriteria(dc);
+		return authorizationManager.findListByCriteria(dc);
 	}
 
-	@Override
 	@Trigger
 	@Scheduled(cron = "0 30 23 * * ?")
 	public void removeExpired() {
 		Calendar cal = Calendar.getInstance();
 		cal.add(Calendar.SECOND, (int) (-expireTime));
-		entityManager
+		authorizationManager
 				.executeUpdate(
 						"delete from Authorization a where lifetime >0 and a.modifyDate < ?1",
 						cal.getTime());
 	}
 
 	@Override
-	public void saveClient(Client client) {
-		entityManager.save(client);
-	}
-
-	@Override
-	public void deleteClient(Client client) {
-		entityManager.delete(client);
-	}
-
-	@Override
 	public Client findClientById(String clientId) {
-		entityManager.setEntityClass(Client.class);
-		Client c = (Client) entityManager.get(clientId);
-		return c != null && c.isEnabled() ? c : null;
+		if (StringUtils.isBlank(clientId))
+			return null;
+		return clientManager.get(clientId);
 	}
 
 	@Override
-	public List<Client> findClientByOwner(User owner) {
-		entityManager.setEntityClass(Client.class);
-		DetachedCriteria dc = entityManager.detachedCriteria();
+	public List<Client> findClientByOwner(UserDetails owner) {
+		DetachedCriteria dc = clientManager.detachedCriteria();
 		dc.add(Restrictions.eq("owner", owner));
 		dc.addOrder(Order.asc("createDate"));
-		return entityManager.findListByCriteria(dc);
+		return clientManager.findListByCriteria(dc);
 	}
 }

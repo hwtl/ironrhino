@@ -9,7 +9,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.recipes.leader.LeaderLatch;
+import org.apache.curator.framework.recipes.leader.LeaderLatchListener;
 import org.apache.curator.framework.recipes.leader.Participant;
+import org.ironrhino.core.coordination.LeaderChangeListener;
 import org.ironrhino.core.coordination.Membership;
 import org.ironrhino.core.spring.configuration.ResourcePresentConditional;
 import org.ironrhino.core.util.AppInfo;
@@ -27,6 +29,9 @@ public class ZooKeeperMembership implements Membership {
 	@Autowired
 	private CuratorFramework curatorFramework;
 
+	@Autowired(required = false)
+	private List<LeaderChangeListener> leaderChangeListeners;
+
 	private String zooKeeperPath = DEFAULT_ZOOKEEPER_PATH;
 
 	private ConcurrentHashMap<String, LeaderLatch> latchs = new ConcurrentHashMap<String, LeaderLatch>();
@@ -39,16 +44,36 @@ public class ZooKeeperMembership implements Membership {
 	public void join(final String group) throws Exception {
 		LeaderLatch latch = latchs.get(group);
 		if (latch == null) {
-			latchs.putIfAbsent(group, new LeaderLatch(curatorFramework,
-					zooKeeperPath + "/" + group, AppInfo.getInstanceId()));
-			latch = latchs.get(group);
+			latch = new LeaderLatch(curatorFramework, zooKeeperPath + "/"
+					+ group, AppInfo.getInstanceId());
+			LeaderLatch old = latchs.putIfAbsent(group, latch);
+			if (old == null) {
+				latch.start();
+				if (leaderChangeListeners != null)
+					latch.addListener(new LeaderLatchListener() {
+
+						@Override
+						public void notLeader() {
+							for (LeaderChangeListener leaderChangeListener : leaderChangeListeners)
+								if (leaderChangeListener.supports(group))
+									leaderChangeListener.notLeader();
+						}
+
+						@Override
+						public void isLeader() {
+							for (LeaderChangeListener leaderChangeListener : leaderChangeListeners)
+								if (leaderChangeListener.supports(group))
+									leaderChangeListener.isLeader();
+						}
+
+					});
+			}
 		}
-		latch.start();
 	}
 
 	@Override
 	public void leave(final String group) throws Exception {
-		LeaderLatch latch = latchs.get(group);
+		LeaderLatch latch = latchs.remove(group);
 		if (latch == null)
 			throw new Exception("Please join group " + group + " first");
 		latch.close();
@@ -77,9 +102,8 @@ public class ZooKeeperMembership implements Membership {
 			throw new Exception("Please join group " + group + " first");
 		Collection<Participant> participants = latch.getParticipants();
 		List<String> list = new ArrayList<String>(participants.size());
-		for (Participant p : participants) {
+		for (Participant p : participants)
 			list.add(p.getId());
-		}
 		return list;
 	}
 

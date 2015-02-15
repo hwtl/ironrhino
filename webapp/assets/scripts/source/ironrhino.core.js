@@ -16,7 +16,7 @@ var MODERN_BROWSER = !$.browser.msie || $.browser.version > 8;
 	var $ajax = $.ajax;
 	if (MODERN_BROWSER)
 		$.ajax = function(options) {
-			options.url = UrlUtils.makeSameOrigin(options.url);
+			// options.url = UrlUtils.makeSameOrigin(options.url);
 			options.xhrFields = {
 				withCredentials : true
 			};
@@ -1306,22 +1306,15 @@ Observation.common = function(container) {
 						t.data('originalhref', t.attr('href')).attr('href',
 								'#' + id).attr('data-toggle', 'modal');
 						$('#' + id).modal('show');
+						if (t.hasClass('nocache'))
+							$('#' + id).on('hidden', function() {
+										t.attr('href', t.data('originalhref'));
+										$(this).remove();
+									})
 					}
 				});
 			} else {
-				if (t.hasClass('nocache')) {
-					$.get(t.data('originalhref'), function(data) {
-								var html = data.replace(
-										/<script(.|\s)*?\/script>/g, '');
-								var div = $('<div/>').html(html);
-								var body = $('#' + id).find('.modal-body')
-										.html($('#content', div).html());
-								_observe(body);
-								$('#' + id).modal('show');
-							});
-				} else {
-					$('#' + id).modal('show');
-				}
+				$('#' + id).modal('show');
 			}
 			return false;
 		});
@@ -1633,7 +1626,7 @@ var Dialog = {
 		if (hasRow) {
 			d.dialog('option', 'width', '90%');
 		}
-		var height = d.height();
+		var height = d.outerHeight();
 		if (height >= $(window).height()) {
 			d.dialog('option', 'position', {
 						my : 'top',

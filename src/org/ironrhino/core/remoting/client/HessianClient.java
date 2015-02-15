@@ -1,5 +1,7 @@
 package org.ironrhino.core.remoting.client;
 
+import java.io.IOException;
+import java.net.URL;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -8,12 +10,18 @@ import org.aopalliance.intercept.MethodInvocation;
 import org.apache.commons.lang3.StringUtils;
 import org.ironrhino.core.metadata.PostPropertiesReset;
 import org.ironrhino.core.remoting.ServiceRegistry;
+import org.ironrhino.core.servlet.AccessFilter;
 import org.ironrhino.core.util.AppInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.remoting.RemoteAccessException;
 import org.springframework.remoting.caucho.HessianProxyFactoryBean;
 import org.springframework.util.Assert;
+
+import com.caucho.hessian.client.HessianConnection;
+import com.caucho.hessian.client.HessianProxyFactory;
+import com.caucho.hessian.client.HessianURLConnectionFactory;
 
 public class HessianClient extends HessianProxyFactoryBean {
 
@@ -29,7 +37,7 @@ public class HessianClient extends HessianProxyFactoryBean {
 
 	private String contextPath;
 
-	private int maxRetryTimes = 3;
+	private int maxAttempts = 3;
 
 	private List<String> asyncMethods;
 
@@ -51,8 +59,8 @@ public class HessianClient extends HessianProxyFactoryBean {
 		this.contextPath = contextPath;
 	}
 
-	public void setMaxRetryTimes(int maxRetryTimes) {
-		this.maxRetryTimes = maxRetryTimes;
+	public void setMaxAttempts(int maxAttempts) {
+		this.maxAttempts = maxAttempts;
 	}
 
 	public void setAsyncMethods(String asyncMethods) {
@@ -92,6 +100,25 @@ public class HessianClient extends HessianProxyFactoryBean {
 			urlFromDiscovery = true;
 		}
 		setHessian2(true);
+		final HessianProxyFactory proxyFactory = new HessianProxyFactory();
+		proxyFactory.setConnectionFactory(new HessianURLConnectionFactory() {
+
+			{
+				setHessianProxyFactory(proxyFactory);
+			}
+
+			@Override
+			public HessianConnection open(URL url) throws IOException {
+				HessianConnection conn = super.open(url);
+				String requestId = MDC.get(AccessFilter.MDC_KEY_REQUEST_ID);
+				if (requestId != null)
+					conn.addHeader(AccessFilter.HTTP_HEADER_REQUEST_ID,
+							requestId);
+				return conn;
+			}
+
+		});
+		setProxyFactory(proxyFactory);
 		super.afterPropertiesSet();
 	}
 
@@ -118,7 +145,7 @@ public class HessianClient extends HessianProxyFactoryBean {
 					@Override
 					public void run() {
 						try {
-							invoke(invocation, maxRetryTimes);
+							invoke(invocation, maxAttempts);
 						} catch (Throwable e) {
 							log.error(e.getMessage(), e);
 						}
@@ -131,16 +158,15 @@ public class HessianClient extends HessianProxyFactoryBean {
 				return null;
 			}
 		}
-		return invoke(invocation, maxRetryTimes);
+		return invoke(invocation, maxAttempts);
 	}
 
-	public Object invoke(MethodInvocation invocation, int retryTimes)
+	public Object invoke(MethodInvocation invocation, int attempts)
 			throws Throwable {
-		retryTimes--;
 		try {
 			return super.invoke(invocation);
 		} catch (RemoteAccessException e) {
-			if (retryTimes < 0)
+			if (--attempts < 1)
 				throw e;
 			if (urlFromDiscovery) {
 				serviceRegistry.evict(host);
@@ -151,7 +177,7 @@ public class HessianClient extends HessianProxyFactoryBean {
 					reset();
 				}
 			}
-			return invoke(invocation, retryTimes);
+			return invoke(invocation, attempts);
 		}
 	}
 

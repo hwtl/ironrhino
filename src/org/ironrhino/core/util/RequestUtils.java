@@ -19,6 +19,11 @@ import org.apache.commons.lang3.StringUtils;
 
 public class RequestUtils {
 
+	public static boolean isInternalTesting(HttpServletRequest request) {
+		String qs = request.getQueryString();
+		return qs != null && qs.contains("_internal_testing_");
+	}
+
 	public static String serializeData(HttpServletRequest request) {
 		if (request.getMethod().equalsIgnoreCase("POST")
 				|| request.getMethod().equalsIgnoreCase("PUT")) {
@@ -205,11 +210,7 @@ public class RequestUtils {
 		} catch (UnsupportedEncodingException e) {
 		}
 		Cookie cookie = new Cookie(cookieName, cookieValue);
-		try {
-			cookie.setHttpOnly(httpOnly);
-		} catch (NoSuchMethodError e) {
-			// for below servlet 3.0
-		}
+		cookie.setHttpOnly(httpOnly);
 		if (StringUtils.isNotBlank(domain))
 			cookie.setDomain(domain);
 		cookie.setMaxAge(maxAge);

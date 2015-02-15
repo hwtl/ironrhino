@@ -216,6 +216,11 @@ input[type="checkbox"].custom + label.custom {
 	position: relative;
 }
 
+input[type="checkbox"][disabled].custom + label.custom {
+	cursor: not-allowed !important;
+	background-color: #eee !important;
+}
+
 input[type="checkbox"].custom + label.custom:hover {
 	background-color: #eaeaea;
 }
@@ -250,6 +255,11 @@ input[type="radio"].custom + label.custom {
 	vertical-align: middle;
 	margin-bottom: 0;
 	position: relative;
+}
+
+input[type="radio"][disabled].custom + label.custom {
+	cursor: not-allowed !important;
+	background-color: #eee !important;
 }
 
 input[type="radio"].custom + label.custom:hover {
@@ -312,7 +322,29 @@ select:hover,select:focus{
 ::-ms-expand {
 	 display: none;
 }
-
+.input-append.search input{
+	-webkit-box-shadow: none;
+    -moz-box-shadow: none;
+    box-shadow: none;
+    border-right: 0;
+    padding-left: 10px;
+    padding-right: 0;
+    -webkit-border-radius:  1rem 0 0 1rem;
+    -moz-border-radius:  1rem 0 0 1rem;
+    border-radius: 1rem 0 0 1rem;
+}
+.input-append.search .add-on{
+	background-color: #fff;
+    border: 1px solid #ccc;
+	border-left: 0;
+	margin-left: 0;
+	-webkit-border-radius: 0 1rem 1rem 0;
+	-moz-border-radius: 0 1rem 1rem 0;
+	border-radius: 0 1rem 1rem 0;
+}
+.input-append.search input[type="text"]:focus ~ .add-on{
+	border-color: rgba(82, 168, 236, 0.8);
+}
 div.preview{
 	vertical-align: middle;
 	padding: 4px 6px;

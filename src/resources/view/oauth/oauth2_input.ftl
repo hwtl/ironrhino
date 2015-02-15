@@ -11,7 +11,7 @@
 		you denied this request
 	</div>
 	<#else>
-		<@s.form id="grant_form" action="grant" method="post" class="form-horizontal">
+		<@s.form id="grant_form" action="${actionBaseUrl}/grant" method="post" class="form-horizontal">
 			<#if client??>
 			<legend>
 			<div>grant access of ${authorization.scope!} to <strong title="${client.description!}" class="tiped">${client.name}</strong></div>
@@ -40,7 +40,7 @@
 			</#if>
 			<div class="form-actions">
 			<#if Parameters.login??>
-				<@s.submit value="%{getText('login')}" theme="simple"/>
+				<@s.submit value="%{getText('login')}" theme="simple" class="btn-primary"/>
 			<#else>
 				<@s.submit value="%{getText('grant')}" theme="simple" class="btn-primary"/> <@s.submit value="%{getText('deny')}" theme="simple" onclick="document.getElementById('grant_form').action='deny';"/>
 			</#if>

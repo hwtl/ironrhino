@@ -36,7 +36,9 @@ table.richtable td {
 }
 .richtable table td.action{
 	white-space:nowrap;
-	overflow:hidden;
+}
+.richtable table td.action ul.dropdown-menu{
+	min-width: 100px;
 }
 .richtable tbody input.text,.richtable tbody textarea.text {
 	width: 90%;

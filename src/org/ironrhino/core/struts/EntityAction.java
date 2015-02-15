@@ -4,6 +4,7 @@ import java.io.PrintWriter;
 import java.io.Serializable;
 import java.io.StringWriter;
 import java.net.URLEncoder;
+import java.sql.SQLException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -15,12 +16,17 @@ import java.util.Map;
 import java.util.Set;
 
 import javax.persistence.Version;
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.struts2.ServletActionContext;
 import org.apache.struts2.views.freemarker.FreemarkerManager;
+import org.hibernate.HibernateException;
+import org.hibernate.Query;
+import org.hibernate.Session;
 import org.hibernate.annotations.GenericGenerator;
+import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.NaturalId;
 import org.hibernate.criterion.DetachedCriteria;
 import org.hibernate.criterion.MatchMode;
@@ -28,6 +34,7 @@ import org.hibernate.criterion.Order;
 import org.hibernate.criterion.Restrictions;
 import org.ironrhino.core.hibernate.CriteriaState;
 import org.ironrhino.core.hibernate.CriterionUtils;
+import org.ironrhino.core.metadata.AppendOnly;
 import org.ironrhino.core.metadata.Authorize;
 import org.ironrhino.core.metadata.CaseInsensitive;
 import org.ironrhino.core.metadata.JsonConfig;
@@ -41,9 +48,9 @@ import org.ironrhino.core.model.Ordered;
 import org.ironrhino.core.model.Persistable;
 import org.ironrhino.core.model.ResultPage;
 import org.ironrhino.core.model.Tuple;
+import org.ironrhino.core.search.SearchService;
 import org.ironrhino.core.search.SearchService.Mapper;
 import org.ironrhino.core.search.elasticsearch.ElasticSearchCriteria;
-import org.ironrhino.core.search.elasticsearch.ElasticSearchService;
 import org.ironrhino.core.search.elasticsearch.annotations.Searchable;
 import org.ironrhino.core.security.role.UserRole;
 import org.ironrhino.core.service.BaseManager;
@@ -63,6 +70,7 @@ import org.springframework.beans.BeanWrapperImpl;
 import org.springframework.beans.ConversionNotSupportedException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.convert.ConversionService;
+import org.springframework.orm.hibernate3.HibernateCallback;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -102,7 +110,7 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 	protected BaseTreeableEntity parentEntity;
 
 	@Autowired(required = false)
-	private transient ElasticSearchService<Persistable<?>> elasticSearchService;
+	private transient SearchService<Persistable<?>> searchService;
 
 	@Autowired(required = false)
 	private transient ConversionService conversionService;
@@ -174,9 +182,26 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 
 	public ReadonlyImpl getReadonly() {
 		if (_readonly == null) {
+
 			Richtable rconfig = getClass().getAnnotation(Richtable.class);
 			if (rconfig == null)
 				rconfig = getEntityClass().getAnnotation(Richtable.class);
+			Immutable immutable = getEntityClass().getAnnotation(
+					Immutable.class);
+			if (immutable != null && rconfig == null) {
+				_readonly = new ReadonlyImpl();
+				_readonly.setValue(true);
+				return _readonly;
+			}
+			AppendOnly appendOnly = getEntityClass().getAnnotation(
+					AppendOnly.class);
+			if (appendOnly != null && rconfig == null) {
+				_readonly = new ReadonlyImpl();
+				_readonly.setValue(false);
+				_readonly.setExpression("!entity.new");
+				_readonly.setDeletable(false);
+				return _readonly;
+			}
 			Readonly rc = null;
 			if (rconfig != null)
 				rc = rconfig.readonly();
@@ -352,7 +377,7 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 		Tuple<Owner, Class<? extends UserDetails>> ownerProperty = getOwnerProperty();
 		if (ownerProperty != null
 				&& ownerProperty.getKey().isolate()
-				|| (!searchable || StringUtils.isBlank(keyword) || (searchable && elasticSearchService == null))) {
+				|| (!searchable || StringUtils.isBlank(keyword) || (searchable && searchService == null))) {
 			DetachedCriteria dc = entityManager.detachedCriteria();
 			if (ownerProperty != null) {
 				Owner owner = ownerProperty.getKey();
@@ -387,14 +412,17 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 				}
 			}
 			if (searchable && StringUtils.isNotBlank(keyword)) {
-				Set<String> propertyNamesInLike = new HashSet<String>();
+				Map<String, MatchMode> propertyNamesInLike = new LinkedHashMap<String, MatchMode>();
 				for (Map.Entry<String, UiConfigImpl> entry : getUiConfigs()
 						.entrySet()) {
 					if (entry.getValue().isSearchable()
 							&& !entry.getValue().isExcludedFromLike()) {
 						if (String.class.equals(entry.getValue()
 								.getPropertyType())) {
-							propertyNamesInLike.add(entry.getKey());
+							propertyNamesInLike
+									.put(entry.getKey(), entry.getValue()
+											.isExactMatch() ? MatchMode.EXACT
+											: MatchMode.ANYWHERE);
 						} else if (Persistable.class.isAssignableFrom(entry
 								.getValue().getPropertyType())) {
 							Set<String> nestSearchableProperties = entry
@@ -412,18 +440,46 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 									criteriaState.getAliases().put(
 											entry.getKey(), alias);
 								}
-								for (String s : nestSearchableProperties)
-									propertyNamesInLike.add(new StringBuilder(
-											alias).append(".").append(s)
-											.toString());
+								for (String s : nestSearchableProperties) {
+									UiConfigImpl nestUci = EntityClassHelper
+											.getUiConfigs(
+													entry.getValue()
+															.getPropertyType())
+											.get(s);
+									if (nestUci == null)
+										continue;
+									propertyNamesInLike
+											.put(new StringBuilder(alias)
+													.append(".").append(s)
+													.toString(),
+													nestUci.isExactMatch() ? MatchMode.EXACT
+															: MatchMode.ANYWHERE);
+								}
+							}
+						} else if (entry.getValue().getEmbeddedUiConfigs() != null) {
+							Set<String> nestSearchableProperties = entry
+									.getValue().getNestSearchableProperties();
+							if (nestSearchableProperties != null
+									&& nestSearchableProperties.size() > 0) {
+								for (String s : nestSearchableProperties) {
+									UiConfigImpl nestUci = entry.getValue()
+											.getEmbeddedUiConfigs().get(s);
+									if (nestUci == null)
+										continue;
+									propertyNamesInLike
+											.put(new StringBuilder(entry
+													.getKey()).append(".")
+													.append(s).toString(),
+													nestUci.isExactMatch() ? MatchMode.EXACT
+															: MatchMode.ANYWHERE);
+								}
 							}
 						}
 
 					}
 				}
 				if (propertyNamesInLike.size() > 0)
-					dc.add(CriterionUtils.like(keyword, MatchMode.ANYWHERE,
-							propertyNamesInLike.toArray(new String[0])));
+					dc.add(CriterionUtils.like(keyword, propertyNamesInLike));
 			}
 			boolean resetPageSize;
 			if (resultPage == null) {
@@ -524,7 +580,7 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 			if (richtableConfig != null)
 				resultPage.setPaginating(richtableConfig.paginating());
 			resultPage.setCriteria(criteria);
-			resultPage = elasticSearchService.search(resultPage,
+			resultPage = searchService.search(resultPage,
 					new Mapper<Persistable<?>>() {
 						@Override
 						public Persistable map(Persistable source) {
@@ -726,9 +782,10 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 	}
 
 	protected boolean makeEntityValid() {
+		HttpServletRequest request = ServletActionContext.getRequest();
+		String targetField = request.getHeader("X-Target-Field");
 		boolean idAssigned = isIdAssigned();
-		boolean fromList = "cell".equalsIgnoreCase(ServletActionContext
-				.getRequest().getHeader("X-Edit"));
+		boolean fromList = "cell".equalsIgnoreCase(request.getHeader("X-Edit"));
 		Map<String, UiConfigImpl> uiConfigs = getUiConfigs();
 		BaseManager<Persistable<?>> entityManager = getEntityManager(getEntityClass());
 		_entity = constructEntity();
@@ -805,8 +862,13 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 				if (persisted != null) {
 					it = naturalIds.keySet().iterator();
 					while (it.hasNext()) {
-						addFieldError(getEntityName() + "." + it.next(),
-								getText("validation.already.exists"));
+						String fieldName = getEntityName() + "." + it.next();
+						if (StringUtils.isBlank(targetField)
+								|| targetField.equals(fieldName)
+								|| targetField.equals(fieldName + ".id"))
+							addFieldError(targetField == null ? fieldName
+									: targetField,
+									getText("validation.already.exists"));
 					}
 					return false;
 				}
@@ -917,8 +979,13 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 						&& !persisted.getId().equals(_entity.getId())) {
 					it = naturalIds.keySet().iterator();
 					while (it.hasNext()) {
-						addFieldError(getEntityName() + "." + it.next(),
-								getText("validation.already.exists"));
+						String fieldName = getEntityName() + "." + it.next();
+						if (StringUtils.isBlank(targetField)
+								|| targetField.equals(fieldName)
+								|| targetField.equals(fieldName + ".id"))
+							addFieldError(targetField == null ? fieldName
+									: targetField,
+									getText("validation.already.exists"));
 					}
 					return false;
 				}
@@ -1483,6 +1550,43 @@ public class EntityAction<EN extends Persistable<?>> extends BaseAction {
 
 	public Collection<Persistable> getChildren() {
 		return children;
+	}
+
+	@JsonConfig(root = "suggestions")
+	@Authorize(ifAnyGranted = UserRole.ROLE_BUILTIN_USER)
+	public String suggestion() {
+		final String propertyName = getUid();
+		if (StringUtils.isBlank(propertyName) || StringUtils.isBlank(keyword))
+			return NONE;
+		UiConfigImpl uic = getUiConfigs().get(propertyName);
+		if (uic == null
+				|| !uic.isUnique()
+				&& !(getNaturalIds().size() == 1 && getNaturalIds()
+						.containsKey(propertyName)))
+			return NONE;
+		suggestions = getEntityManager(getEntityClass()).executeFind(
+				new HibernateCallback<List<String>>() {
+					@Override
+					public List<String> doInHibernate(Session session)
+							throws HibernateException, SQLException {
+						StringBuilder hql = new StringBuilder("select ")
+								.append(propertyName).append(" from ")
+								.append(getEntityClass().getSimpleName())
+								.append(" where ").append(propertyName)
+								.append(" like :keyword");
+						Query q = session.createQuery(hql.toString());
+						q.setParameter("keyword", keyword + "%");
+						q.setMaxResults(20);
+						return q.list();
+					}
+				});
+		return JSON;
+	}
+
+	private List<String> suggestions;
+
+	public List<String> getSuggestions() {
+		return suggestions;
 	}
 
 	@Override

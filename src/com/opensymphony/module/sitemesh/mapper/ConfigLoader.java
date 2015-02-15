@@ -21,8 +21,10 @@ import javax.xml.parsers.ParserConfigurationException;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The ConfigLoader reads a configuration XML file that contains Decorator definitions
@@ -54,8 +56,9 @@ import java.util.Map;
  */
 public class ConfigLoader {
 
+	public static final String DEFAULT_DIR = "/resources/view/decorator/";
     
-    private Map<String,Decorator> decorators = new HashMap<String,Decorator>();
+    private Map<String,Decorator> decorators = new ConcurrentHashMap<String,Decorator>();
     
     private PathMapper pathMapper = new PathMapper();
 
@@ -84,7 +87,19 @@ public class ConfigLoader {
      * Retrieve Decorator based on name specified in configuration file.
      */
     public Decorator getDecoratorByName(String name) throws ServletException {
-        return (Decorator) decorators.get(name);
+    	Decorator decorator = (Decorator) decorators.get(name);
+    	if(decorator == null){
+    		String page = DEFAULT_DIR + name + ".ftl";
+    		String resourceName = page.substring(1);
+    		URL url = Thread.currentThread().getContextClassLoader().getResource(resourceName);
+    	    if (url == null)
+    	        url = getClass().getClassLoader().getResource(resourceName);
+    		if(url != null){
+    			decorator = new DefaultDecorator(name, page, null, null, null);
+    			storeDecorator(decorator);
+    		}
+    	}
+    	return decorator;
     }
 
     /** Get name of Decorator mapped to given path. */
@@ -105,12 +120,12 @@ public class ConfigLoader {
 
             Document document;
             InputStream is = config.getServletContext().getResourceAsStream(configFileName.indexOf('/') == 0 ? configFileName : '/'+configFileName);
-            if (is == null){
+            if (is == null)
                 is = getClass().getClassLoader().getResourceAsStream(configFileName);
-                }
-            if (is == null){
+            if (is == null)
                 is = Thread.currentThread().getContextClassLoader().getResourceAsStream(configFileName);
-            }
+            if (is == null)
+                is = getClass().getClassLoader().getResourceAsStream(configFileName);
             document = builder.parse(is);
 
             // Parse the configuration document
